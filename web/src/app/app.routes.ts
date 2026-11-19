@@ -1,15 +1,20 @@
 import { inject } from '@angular/core';
-import { Router, Routes } from '@angular/router';
+import { CanActivateFn, Router, Routes } from '@angular/router';
 import { catchError, map, of } from 'rxjs';
-import { GymService } from './gym.service';
+import { GymService, Usuario } from './gym.service';
 import { LoginComponent } from './pages/login.component';
 import { InicioComponent } from './pages/inicio.component';
 import { SocioComponent } from './pages/socio.component';
 import { UsuariosComponent } from './pages/usuarios.component';
+import { CajaComponent } from './pages/caja.component';
+import { AvisosComponent } from './pages/avisos.component';
 
-const conSesion = () => {
+// Con contraseña temporal solo se puede ir a cambiarla (la API también lo exige).
+const conSesion: CanActivateFn = (_ruta, estado) => {
   const gym = inject(GymService), router = inject(Router);
-  return gym.usuario() ? true : gym.yo().pipe(map(() => true), catchError(() => of(router.parseUrl('/login'))));
+  const revisar = (u: Usuario) => u.cambiar_clave && estado.url !== '/usuarios' ? router.parseUrl('/usuarios') : true;
+  const u = gym.usuario();
+  return u ? revisar(u) : gym.yo().pipe(map(revisar), catchError(() => of(router.parseUrl('/login'))));
 };
 
 export const routes: Routes = [
@@ -17,5 +22,7 @@ export const routes: Routes = [
   { path: '', component: InicioComponent, title: 'Clientes', canActivate: [conSesion] },
   { path: 'usuarios', component: UsuariosComponent, title: 'Usuarios', canActivate: [conSesion] },
   { path: 'socio/:id', component: SocioComponent, title: 'Socio', canActivate: [conSesion] },
+  { path: 'caja', component: CajaComponent, title: 'Corte de caja', canActivate: [conSesion] },
+  { path: 'avisos', component: AvisosComponent, title: 'Avisos de vencimiento', canActivate: [conSesion] },
   { path: '**', redirectTo: '' }
 ];

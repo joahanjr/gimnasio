@@ -2,7 +2,7 @@ import { Component, Input, inject, signal } from '@angular/core';
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { FichaSocio, GymService, Plan, duracionTexto } from '../gym.service';
+import { FichaSocio, GymService, METODOS, Metodo, Pago, Plan, duracionTexto, enlaceWhatsApp, metodoTexto } from '../gym.service';
 
 // Las fechas de SQLite vienen como "YYYY-MM-DD HH:MM:SS"; DatePipe necesita la "T".
 const iso = (f: string) => f.replace(' ', 'T');
@@ -27,6 +27,7 @@ const iso = (f: string) => f.replace(' ', 'T');
 
         <div class="datos">
           <h2>#{{ s.id }} {{ s.nombre_completo }}</h2>
+          @if (!s.activo) { <p class="estado mal">Dado de baja</p> }
           <p [class]="'estado ' + (s.vigente ? 'ok' : 'mal')">
             @if (s.dias_restantes === null) { Sin pagos }
             @else if (s.dias_restantes > 1) { Le quedan {{ s.dias_restantes }} días }
@@ -48,15 +49,35 @@ const iso = (f: string) => f.replace(' ', 'T');
             <dd>@if (s.ultimo_pago; as p) { {{ iso(p.fecha) | date:'dd/MM/yyyy' }} · {{ p.plan }} · {{ p.monto | currency }} } @else { — }</dd>
             <dt>Vence su plan</dt><dd>{{ s.vence ? (s.vence + 'T00:00' | date:'dd/MM/yyyy') : '—' }}</dd>
             <dt>Veces que ha venido</dt><dd>{{ s.entradas.length }}</dd>
+            @if (s.avisado) { <dt>Último aviso</dt><dd>{{ s.avisado + 'T00:00' | date:'dd/MM/yyyy' }}</dd> }
           </dl>
           <div class="botones">
-            <button (click)="entrar()">Registrar entrada</button>
-            <button type="button" (click)="abrirCobro(s)" [attr.aria-expanded]="cobrando()">Cobrar membresía</button>
+            @if (s.activo) {
+              <button (click)="entrar()">Registrar entrada</button>
+              <button type="button" (click)="abrirCobro(s)" [attr.aria-expanded]="cobrando()">Cobrar membresía</button>
+              @if (s.telefono) { <a class="boton" [href]="whatsapp(s)" target="_blank" rel="noopener" (click)="avisado()">Avisar por WhatsApp</a> }
+            }
+            <button type="button" (click)="abrirEdicion(s)" [attr.aria-expanded]="editando()">Editar datos</button>
+            <button type="button" (click)="guardar(s, !s.activo)">{{ s.activo ? 'Dar de baja' : 'Reactivar' }}</button>
           </div>
         </div>
       </article>
 
       <p role="status" [class]="mensaje().ok ? 'aviso ok' : 'aviso mal'">{{ mensaje().texto }}</p>
+
+      @if (editando()) {
+        <form ngNativeValidate class="panel" (ngSubmit)="guardar(s, !!s.activo)">
+          <h3>Editar datos</h3>
+          <label>Nombre <span aria-hidden="true">*</span> <input name="nombre" [(ngModel)]="datos.nombre" required autocomplete="off"></label>
+          <label>Primer apellido <span aria-hidden="true">*</span> <input name="apellido1" [(ngModel)]="datos.apellido1" required autocomplete="off"></label>
+          <label>Segundo apellido <input name="apellido2" [(ngModel)]="datos.apellido2" autocomplete="off"></label>
+          <label>Celular (10 dígitos) <span aria-hidden="true">*</span>
+            <input name="telefono" [(ngModel)]="datos.telefono" type="tel" inputmode="numeric" required pattern="[\\d\\s-]*" autocomplete="off">
+          </label>
+          <button>Guardar cambios</button>
+          <button type="button" (click)="editando.set(false)">Cancelar</button>
+        </form>
+      }
 
       @if (cobrando()) {
         <form ngNativeValidate class="panel cobro" (ngSubmit)="pagar()">
@@ -78,6 +99,9 @@ const iso = (f: string) => f.replace(' ', 'T');
             <dt class="total">Total a pagar</dt><dd class="total">{{ total(s) | currency }}</dd>
           </dl>
 
+          <label>Forma de pago
+            <select name="metodo" [(ngModel)]="pago.metodo">@for (m of metodos; track m) { <option [value]="m">{{ metodoTexto(m) }}</option> }</select>
+          </label>
           <label>Pagó <span aria-hidden="true">*</span> <input name="pagado" type="number" min="0" step="0.01" [(ngModel)]="pago.pagado" required></label>
           @if (pago.pagado !== null) {
             <p [class]="saldoNuevo(s) < 0 ? 'mal' : 'ok'">
@@ -89,6 +113,19 @@ const iso = (f: string) => f.replace(' ', 'T');
           <button>Registrar pago</button>
         </form>
       }
+
+      <h3>Pagos</h3>
+      <div class="tabla" tabindex="0" role="region" aria-label="Pagos"><table>
+        <tr><th>Fecha</th><th>Plan</th><th>Cobro</th><th>Pagó</th><th>Forma de pago</th>@if (esAdmin()) { <th></th> }</tr>
+        @for (p of s.pagos; track p.id) {
+          <tr [class.anulado]="p.anulado">
+            <td>{{ iso(p.fecha) | date:'dd/MM/yyyy' }}</td><td>{{ p.plan }}</td><td>{{ p.cargo | currency }}</td>
+            <td>@if (p.anulado) { <s>{{ p.monto | currency }}</s> Anulado } @else { {{ p.monto | currency }} }</td>
+            <td>{{ metodoTexto(p.metodo) }}</td>
+            @if (esAdmin()) { <td>@if (p === ultimoVigente(s) && p.anulable) { <button type="button" (click)="anular(p)">Anular</button> }</td> }
+          </tr>
+        } @empty { <tr><td colspan="6">Sin pagos.</td></tr> }
+      </table></div>
 
       <h3>Fechas en que ha venido</h3>
       @if (s.entradas.length) {
@@ -110,7 +147,15 @@ export class SocioComponent {
   duracionTexto = duracionTexto;
   cobrando = signal(false);
   mensaje = signal({ ok: true, texto: '' });
-  pago = { plan_id: null as number | null, inscripcion: false, descuento: 0, pagado: null as number | null };
+  pago = { plan_id: null as number | null, inscripcion: false, descuento: 0, pagado: null as number | null, metodo: 'efectivo' as Metodo };
+  editando = signal(false);
+  datos = { nombre: '', apellido1: '', apellido2: '' as string | null, telefono: '' };
+  metodos = METODOS;
+  metodoTexto = metodoTexto;
+  whatsapp = enlaceWhatsApp;
+  esAdmin = () => this.gym.usuario()?.rol === 'admin';
+  // Solo el último pago vigente se puede anular (la API lo exige).
+  ultimoVigente = (s: FichaSocio) => s.pagos.find(p => !p.anulado);
   version = signal(Date.now()); // cambia al subir foto para que el navegador no muestre la anterior
   iso = iso;
 
@@ -146,14 +191,14 @@ export class SocioComponent {
   abrirCobro(s: FichaSocio) {
     if (this.cobrando()) return this.cobrando.set(false);
     const suPlan = this.planes().some(p => p.id === s.plan_id) ? s.plan_id : null;
-    this.pago = { plan_id: suPlan, inscripcion: !s.ultimo_pago, descuento: 0, pagado: null }; // inscripción solo en su primer pago
+    this.pago = { plan_id: suPlan, inscripcion: !s.ultimo_pago, descuento: 0, pagado: null, metodo: 'efectivo' }; // inscripción solo en su primer pago
     this.cobrando.set(true);
   }
 
   pagar() {
-    const { plan_id, inscripcion, descuento, pagado } = this.pago;
+    const { plan_id, inscripcion, descuento, pagado, metodo } = this.pago;
     if (plan_id === null || pagado === null) return;
-    this.gym.pagar({ socio_id: Number(this.id), plan_id, inscripcion, descuento: Number(descuento) || 0, pagado: Number(pagado) }).subscribe({
+    this.gym.pagar({ socio_id: Number(this.id), plan_id, inscripcion, descuento: Number(descuento) || 0, pagado: Number(pagado), metodo }).subscribe({
       next: s => {
         const saldo = s.saldo < 0 ? `, saldo pendiente ${(-s.saldo).toFixed(2)}` : s.saldo > 0 ? `, saldo a favor ${s.saldo.toFixed(2)}` : '';
         this.mensaje.set({ ok: s.saldo >= 0, texto: `Pago registrado, vigente hasta ${s.vence}${saldo}` });
@@ -162,6 +207,32 @@ export class SocioComponent {
       },
       error: this.fallo
     });
+  }
+
+  abrirEdicion(s: FichaSocio) {
+    this.datos = { nombre: s.nombre, apellido1: s.apellido1 ?? '', apellido2: s.apellido2, telefono: s.telefono ?? '' };
+    this.editando.set(!this.editando());
+  }
+
+  // Guarda los datos y, de paso, el estado de alta/baja.
+  guardar(s: FichaSocio, activo: boolean) {
+    if (!activo && !confirm(`¿Dar de baja a ${s.nombre_completo}? Su historial se conserva y se puede reactivar.`)) return;
+    const datos = this.editando() ? this.datos : { nombre: s.nombre, apellido1: s.apellido1 ?? '', apellido2: s.apellido2, telefono: s.telefono ?? '' };
+    this.gym.editarSocio(s.id, { ...datos, activo }).subscribe({
+      next: () => {
+        this.mensaje.set({ ok: true, texto: activo === !!s.activo ? 'Datos guardados' : activo ? 'Socio reactivado' : 'Socio dado de baja' });
+        this.editando.set(false);
+        this.cargar();
+      },
+      error: this.fallo
+    });
+  }
+
+  avisado() { this.gym.marcarAviso(Number(this.id)).subscribe({ next: () => this.cargar(), error: this.fallo }); }
+
+  anular(p: Pago) {
+    if (!confirm(`¿Anular el pago de ${p.plan} por $${p.monto}? Su vencimiento regresa al de antes de ese pago.`)) return;
+    this.gym.anular('pago', p.id).subscribe({ next: () => { this.mensaje.set({ ok: true, texto: 'Pago anulado' }); this.cargar(); }, error: this.fallo });
   }
 
   async cambiarFoto(e: Event) {

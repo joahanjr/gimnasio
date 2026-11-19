@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { GymService, Plan, Producto, Socio, duracionTexto } from '../gym.service';
+import { GymService, METODOS, Metodo, Plan, Producto, Socio, duracionTexto, metodoTexto } from '../gym.service';
 
 type Accion = 'socio' | 'venta' | 'inventario' | 'visita';
 
@@ -26,7 +26,9 @@ type Accion = 'socio' | 'venta' | 'inventario' | 'visita';
           @if (s.tiene_foto) { <img class="miniatura" [src]="'/api/socios/' + s.id + '/foto'" alt=""> }
           @else { <span class="miniatura sin-foto" aria-hidden="true">{{ s.nombre[0] }}{{ s.apellido1?.[0] }}</span> }
           <span><strong>#{{ s.id }} {{ s.nombre_completo }}</strong><br>
-            <span [class]="s.vigente ? 'ok' : 'mal'">{{ s.vigente ? 'Vigente hasta ' + s.vence : (s.vence ? 'Vencido' : 'Sin pagos') }}</span> · Cel. {{ s.telefono || '—' }}</span>
+            @if (!s.activo) { <span class="mal">Dado de baja</span> }
+            @else { <span [class]="s.vigente ? 'ok' : 'mal'">{{ s.vigente ? 'Vigente hasta ' + s.vence : (s.vence ? 'Vencido' : 'Sin pagos') }}</span> }
+            · Cel. {{ s.telefono || '—' }}</span>
         </a></li>
       }
     </ul>
@@ -58,12 +60,15 @@ type Accion = 'socio' | 'venta' | 'inventario' | 'visita';
           <h3>Agregar venta</h3>
           <label>Producto <span aria-hidden="true">*</span>
             <select name="producto" [(ngModel)]="venta.producto" required>
-              @for (p of productos(); track p.id) {
+              @for (p of productosActivos(); track p.id) {
                 <option [ngValue]="p" [disabled]="!p.existencia">{{ p.nombre }} — {{ p.precio | currency }} ({{ p.existencia }} disponibles)</option>
               }
             </select>
           </label>
           <label>Cantidad <span aria-hidden="true">*</span> <input name="cantidad" type="number" min="1" [max]="venta.producto?.existencia ?? null" step="1" [(ngModel)]="venta.cantidad" required></label>
+          <label>Forma de pago
+            <select name="metodo" [(ngModel)]="venta.metodo">@for (m of metodos; track m) { <option [value]="m">{{ metodoTexto(m) }}</option> }</select>
+          </label>
           <p>Total: <strong>{{ (venta.producto?.precio ?? 0) * venta.cantidad | currency }}</strong></p>
           <button>Registrar venta</button>
         </form>
@@ -83,6 +88,9 @@ type Accion = 'socio' | 'venta' | 'inventario' | 'visita';
           <h3>Visita (pase de un día)</h3>
           <label>Nombre <span aria-hidden="true">*</span> <input name="nombre" [(ngModel)]="visita.nombre" required autocomplete="off"></label>
           <label>Monto <span aria-hidden="true">*</span> <input name="monto" type="number" min="1" step="0.01" [(ngModel)]="visita.monto" required></label>
+          <label>Forma de pago
+            <select name="metodo" [(ngModel)]="visita.metodo">@for (m of metodos; track m) { <option [value]="m">{{ metodoTexto(m) }}</option> }</select>
+          </label>
           <button>Cobrar visita</button>
         </form>
       }
@@ -108,9 +116,12 @@ export class InicioComponent {
   mensaje = signal({ ok: true, texto: '' });
 
   socio = { nombre: '', apellido1: '', apellido2: '', telefono: '', plan_id: null as number | null };
-  venta: { producto: Producto | null; cantidad: number } = { producto: null, cantidad: 1 };
+  venta: { producto: Producto | null; cantidad: number; metodo: Metodo } = { producto: null, cantidad: 1, metodo: 'efectivo' };
   inventario = { nombre: '', cantidad: 1, precio: 0 };
-  visita = { nombre: '', monto: 0 };
+  visita = { nombre: '', monto: 0, metodo: 'efectivo' as Metodo };
+  metodos = METODOS;
+  metodoTexto = metodoTexto;
+  productosActivos = () => this.productos().filter(p => p.activo);
 
   fotoNueva: File | null = null;
 
@@ -148,10 +159,10 @@ export class InicioComponent {
   }
 
   vender() {
-    const { producto, cantidad } = this.venta;
+    const { producto, cantidad, metodo } = this.venta;
     if (!producto) return;
-    this.gym.vender({ producto_id: producto.id, cantidad: Number(cantidad) }).subscribe({
-      next: () => { this.ok(`Venta registrada: ${cantidad} × ${producto.nombre}`); this.venta = { producto: null, cantidad: 1 }; this.accion.set(null); },
+    this.gym.vender({ producto_id: producto.id, cantidad: Number(cantidad), metodo }).subscribe({
+      next: () => { this.ok(`Venta registrada: ${cantidad} × ${producto.nombre}`); this.venta = { producto: null, cantidad: 1, metodo: 'efectivo' }; this.accion.set(null); },
       error: this.fallo
     });
   }
@@ -165,8 +176,8 @@ export class InicioComponent {
   }
 
   registrarVisita() {
-    this.gym.registrarVisita({ nombre: this.visita.nombre, monto: Number(this.visita.monto) }).subscribe({
-      next: () => { this.ok(`Visita de ${this.visita.nombre} registrada`); this.visita = { nombre: '', monto: 0 }; this.accion.set(null); },
+    this.gym.registrarVisita({ nombre: this.visita.nombre, monto: Number(this.visita.monto), metodo: this.visita.metodo }).subscribe({
+      next: () => { this.ok(`Visita de ${this.visita.nombre} registrada`); this.visita = { nombre: '', monto: 0, metodo: 'efectivo' }; this.accion.set(null); },
       error: this.fallo
     });
   }
