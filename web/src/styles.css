@@ -145,3 +145,16 @@ a.boton:hover { filter: brightness(1.1); }
 p.total { font-size: 1.3rem; }
 .totales { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0 1rem; }
 tr.anulado td { color: var(--suave); }
+
+/* Secciones plegables (Usuarios): el título es un botón que despliega sus opciones */
+.seccion { margin-bottom: .75rem; }
+.seccion > summary {
+  cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center;
+  min-block-size: 48px; padding: .75rem 1rem; font-size: 1.15rem; font-weight: 600;
+  background: var(--superficie); border: 1px solid var(--borde); border-radius: var(--radio); box-shadow: var(--sombra);
+}
+.seccion > summary::-webkit-details-marker { display: none; }
+.seccion > summary::after { content: "▸"; color: var(--primario); transition: rotate .15s; }
+.seccion[open] > summary { margin-bottom: 1rem; color: var(--primario); }
+.seccion[open] > summary::after { rotate: 90deg; }
+@media (prefers-reduced-motion: reduce) { .seccion > summary::after { transition: none; } }

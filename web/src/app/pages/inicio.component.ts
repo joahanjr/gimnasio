@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { GymService, METODOS, Metodo, Plan, Producto, Socio, duracionTexto, metodoTexto } from '../gym.service';
+import { GymService, METODOS, Metodo, Plan, Producto, Socio, duracionTexto, metodoTexto, aviso } from '../gym.service';
 
 type Accion = 'socio' | 'venta' | 'inventario' | 'visita';
 
@@ -39,13 +39,13 @@ type Accion = 'socio' | 'venta' | 'inventario' | 'visita';
       @case ('socio') {
         <form ngNativeValidate class="panel" (ngSubmit)="crearSocio()">
           <h3>Nuevo socio</h3>
-          <label>Nombre <span aria-hidden="true">*</span> <input name="nombre" [(ngModel)]="socio.nombre" required autocomplete="off"></label>
-          <label>Primer apellido <span aria-hidden="true">*</span> <input name="apellido1" [(ngModel)]="socio.apellido1" required autocomplete="off"></label>
+          <label>Nombre <input name="nombre" [(ngModel)]="socio.nombre" required autocomplete="off"></label>
+          <label>Primer apellido <input name="apellido1" [(ngModel)]="socio.apellido1" required autocomplete="off"></label>
           <label>Segundo apellido <input name="apellido2" [(ngModel)]="socio.apellido2" autocomplete="off"></label>
-          <label>Celular (10 dígitos) <span aria-hidden="true">*</span>
+          <label>Celular (10 dígitos)
             <input name="telefono" [(ngModel)]="socio.telefono" type="tel" inputmode="numeric" required pattern="[\\d\\s-]*" autocomplete="off">
           </label>
-          <label>Plan <span aria-hidden="true">*</span>
+          <label>Plan
             <select name="plan" [(ngModel)]="socio.plan_id" required>
               @for (p of planesActivos(); track p.id) { <option [ngValue]="p.id">{{ p.nombre }} — {{ duracionTexto(p) }} — {{ p.precio | currency }}</option> }
             </select>
@@ -58,14 +58,14 @@ type Accion = 'socio' | 'venta' | 'inventario' | 'visita';
       @case ('venta') {
         <form ngNativeValidate class="panel" (ngSubmit)="vender()">
           <h3>Agregar venta</h3>
-          <label>Producto <span aria-hidden="true">*</span>
+          <label>Producto
             <select name="producto" [(ngModel)]="venta.producto" required>
               @for (p of productosActivos(); track p.id) {
                 <option [ngValue]="p" [disabled]="!p.existencia">{{ p.nombre }} — {{ p.precio | currency }} ({{ p.existencia }} disponibles)</option>
               }
             </select>
           </label>
-          <label>Cantidad <span aria-hidden="true">*</span> <input name="cantidad" type="number" min="1" [max]="venta.producto?.existencia ?? null" step="1" [(ngModel)]="venta.cantidad" required></label>
+          <label>Cantidad <input name="cantidad" type="number" min="1" [max]="venta.producto?.existencia ?? null" step="1" [(ngModel)]="venta.cantidad" required></label>
           <label>Forma de pago
             <select name="metodo" [(ngModel)]="venta.metodo">@for (m of metodos; track m) { <option [value]="m">{{ metodoTexto(m) }}</option> }</select>
           </label>
@@ -76,18 +76,18 @@ type Accion = 'socio' | 'venta' | 'inventario' | 'visita';
       @case ('inventario') {
         <form ngNativeValidate class="panel" (ngSubmit)="agregarInventario()">
           <h3>Agregar inventario</h3>
-          <label>Producto <span aria-hidden="true">*</span> <input name="nombre" [(ngModel)]="inventario.nombre" required list="productos" autocomplete="off" placeholder="Nuevo o existente"></label>
+          <label>Producto <input name="nombre" [(ngModel)]="inventario.nombre" required list="productos" autocomplete="off" placeholder="Nuevo o existente"></label>
           <datalist id="productos">@for (p of productos(); track p.id) { <option [value]="p.nombre"></option> }</datalist>
-          <label>Cantidad que entra <span aria-hidden="true">*</span> <input name="cantidad" type="number" min="1" step="1" [(ngModel)]="inventario.cantidad" required></label>
-          <label>Precio de venta <span aria-hidden="true">*</span> <input name="precio" type="number" min="0.01" step="0.01" [(ngModel)]="inventario.precio" required></label>
+          <label>Cantidad que entra <input name="cantidad" type="number" min="1" step="1" [(ngModel)]="inventario.cantidad" required></label>
+          <label>Precio de venta <input name="precio" type="number" min="0.01" step="0.01" [(ngModel)]="inventario.precio" required></label>
           <button>Guardar</button>
         </form>
       }
       @case ('visita') {
         <form ngNativeValidate class="panel" (ngSubmit)="registrarVisita()">
           <h3>Visita (pase de un día)</h3>
-          <label>Nombre <span aria-hidden="true">*</span> <input name="nombre" [(ngModel)]="visita.nombre" required autocomplete="off"></label>
-          <label>Monto <span aria-hidden="true">*</span> <input name="monto" type="number" min="1" step="0.01" [(ngModel)]="visita.monto" required></label>
+          <label>Nombre <input name="nombre" [(ngModel)]="visita.nombre" required autocomplete="off"></label>
+          <label>Monto <input name="monto" type="number" min="1" step="0.01" [(ngModel)]="visita.monto" required></label>
           <label>Forma de pago
             <select name="metodo" [(ngModel)]="visita.metodo">@for (m of metodos; track m) { <option [value]="m">{{ metodoTexto(m) }}</option> }</select>
           </label>
@@ -113,7 +113,7 @@ export class InicioComponent {
   planesActivos = signal<Plan[]>([]);
   duracionTexto = duracionTexto;
   accion = signal<Accion | null>(null);
-  mensaje = signal({ ok: true, texto: '' });
+  mensaje = aviso({ ok: true, texto: '' });
 
   socio = { nombre: '', apellido1: '', apellido2: '', telefono: '', plan_id: null as number | null };
   venta: { producto: Producto | null; cantidad: number; metodo: Metodo } = { producto: null, cantidad: 1, metodo: 'efectivo' };

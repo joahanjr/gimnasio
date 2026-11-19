@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { GymService } from '../gym.service';
+import { GymService, aviso } from '../gym.service';
 
 @Component({
   standalone: true,
@@ -25,7 +25,7 @@ export class LoginComponent {
   guardados: string[] = leerGuardados();
   usuario = this.guardados[0] ?? '';
   clave = '';
-  error = signal('');
+  error = aviso('');
 
   entrar() {
     this.gym.login(this.usuario, this.clave).subscribe({

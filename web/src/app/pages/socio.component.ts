@@ -2,7 +2,7 @@ import { Component, Input, inject, signal } from '@angular/core';
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { FichaSocio, GymService, METODOS, Metodo, Pago, Plan, duracionTexto, enlaceWhatsApp, metodoTexto } from '../gym.service';
+import { FichaSocio, GymService, METODOS, Metodo, Pago, Plan, duracionTexto, enlaceWhatsApp, metodoTexto, aviso } from '../gym.service';
 
 // Las fechas de SQLite vienen como "YYYY-MM-DD HH:MM:SS"; DatePipe necesita la "T".
 const iso = (f: string) => f.replace(' ', 'T');
@@ -68,10 +68,10 @@ const iso = (f: string) => f.replace(' ', 'T');
       @if (editando()) {
         <form ngNativeValidate class="panel" (ngSubmit)="guardar(s, !!s.activo)">
           <h3>Editar datos</h3>
-          <label>Nombre <span aria-hidden="true">*</span> <input name="nombre" [(ngModel)]="datos.nombre" required autocomplete="off"></label>
-          <label>Primer apellido <span aria-hidden="true">*</span> <input name="apellido1" [(ngModel)]="datos.apellido1" required autocomplete="off"></label>
+          <label>Nombre <input name="nombre" [(ngModel)]="datos.nombre" required autocomplete="off"></label>
+          <label>Primer apellido <input name="apellido1" [(ngModel)]="datos.apellido1" required autocomplete="off"></label>
           <label>Segundo apellido <input name="apellido2" [(ngModel)]="datos.apellido2" autocomplete="off"></label>
-          <label>Celular (10 dígitos) <span aria-hidden="true">*</span>
+          <label>Celular (10 dígitos)
             <input name="telefono" [(ngModel)]="datos.telefono" type="tel" inputmode="numeric" required pattern="[\\d\\s-]*" autocomplete="off">
           </label>
           <button>Guardar cambios</button>
@@ -102,7 +102,7 @@ const iso = (f: string) => f.replace(' ', 'T');
           <label>Forma de pago
             <select name="metodo" [(ngModel)]="pago.metodo">@for (m of metodos; track m) { <option [value]="m">{{ metodoTexto(m) }}</option> }</select>
           </label>
-          <label>Pagó <span aria-hidden="true">*</span> <input name="pagado" type="number" min="0" step="0.01" [(ngModel)]="pago.pagado" required></label>
+          <label>Pagó <input name="pagado" type="number" min="0" step="0.01" [(ngModel)]="pago.pagado" required></label>
           @if (pago.pagado !== null) {
             <p [class]="saldoNuevo(s) < 0 ? 'mal' : 'ok'">
               @if (saldoNuevo(s) < 0) { Quedará un saldo pendiente de {{ -saldoNuevo(s) | currency }} }
@@ -134,7 +134,7 @@ const iso = (f: string) => f.replace(' ', 'T');
         </ol>
       } @else { <p>Todavía no ha venido.</p> }
     } @else {
-      <p role="status" [class]="mensaje().ok ? '' : 'aviso mal'">{{ mensaje().texto || 'Cargando…' }}</p>
+      <p role="status" [class]="errorCarga() ? 'aviso mal' : ''">{{ errorCarga() || 'Cargando…' }}</p>
     }
   `
 })
@@ -146,7 +146,8 @@ export class SocioComponent {
   inscripcion = signal(0);
   duracionTexto = duracionTexto;
   cobrando = signal(false);
-  mensaje = signal({ ok: true, texto: '' });
+  mensaje = aviso({ ok: true, texto: '' });
+  errorCarga = signal(''); // este no se borra: sin ficha no hay nada más que mostrar
   pago = { plan_id: null as number | null, inscripcion: false, descuento: 0, pagado: null as number | null, metodo: 'efectivo' as Metodo };
   editando = signal(false);
   datos = { nombre: '', apellido1: '', apellido2: '' as string | null, telefono: '' };
@@ -167,7 +168,7 @@ export class SocioComponent {
     this.gym.ajustes().subscribe(a => this.inscripcion.set(a.inscripcion));
   }
 
-  cargar() { this.gym.ficha(Number(this.id)).subscribe({ next: f => this.s.set(f), error: this.fallo }); }
+  cargar() { this.gym.ficha(Number(this.id)).subscribe({ next: f => this.s.set(f), error: e => this.errorCarga.set(e.error?.error ?? 'Error de conexión') }); }
 
   entrar() {
     this.gym.registrarEntrada(Number(this.id)).subscribe({

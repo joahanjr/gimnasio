@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { CurrencyPipe, DatePipe, KeyValuePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Corte, GymService, Movimiento, metodoTexto } from '../gym.service';
+import { Corte, GymService, Movimiento, metodoTexto, aviso } from '../gym.service';
 
 const TIPOS: Record<string, string> = { pago: 'Membresías', visita: 'Visitas', venta: 'Ventas' };
 
@@ -50,7 +50,7 @@ export class CajaComponent {
   private gym = inject(GymService);
   fecha = new Date().toLocaleDateString('sv');
   corte = signal<Corte | null>(null);
-  mensaje = signal({ ok: true, texto: '' });
+  mensaje = aviso({ ok: true, texto: '' });
   esAdmin = () => this.gym.usuario()?.rol === 'admin';
   tipos = TIPOS;
   metodoTexto = metodoTexto;

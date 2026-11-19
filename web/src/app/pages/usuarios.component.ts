@@ -1,7 +1,8 @@
 import { Component, inject, signal } from '@angular/core';
 import { CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { GymService, Plan, PlanNuevo, Producto, Rol, Usuario, duracionTexto } from '../gym.service';
+import { Router } from '@angular/router';
+import { GymService, Plan, PlanNuevo, Producto, Rol, Usuario, duracionTexto, aviso } from '../gym.service';
 
 @Component({
   standalone: true,
@@ -10,23 +11,28 @@ import { GymService, Plan, PlanNuevo, Producto, Rol, Usuario, duracionTexto } fr
     @if (gym.usuario()?.cambiar_clave) {
       <p role="alert" class="aviso mal">Tu contraseña es temporal. Cámbiala para poder usar el sistema.</p>
     }
-    <h2>Cambiar mi contraseña</h2>
+    <details class="seccion" [open]="!!gym.usuario()?.cambiar_clave">
+    <summary>Cambiar mi contraseña</summary>
     <form ngNativeValidate class="panel" (ngSubmit)="cambiarClave()">
-      <label>Contraseña actual <input name="actual" type="password" [(ngModel)]="clave.actual" required autocomplete="current-password"></label>
-      <label>Nueva contraseña <input name="nueva" type="password" minlength="4" [(ngModel)]="clave.nueva" required autocomplete="new-password"></label>
+      <label>Contraseña actual <input name="actual" [type]="verClave() ? 'text' : 'password'" [(ngModel)]="clave.actual" required autocomplete="current-password"></label>
+      <label>Nueva contraseña <input name="nueva" [type]="verClave() ? 'text' : 'password'" minlength="4" [(ngModel)]="clave.nueva" required autocomplete="new-password"></label>
+      <label>Repite la nueva contraseña <input name="repetida" [type]="verClave() ? 'text' : 'password'" minlength="4" [(ngModel)]="clave.repetida" required autocomplete="new-password"></label>
+      <button type="button" [attr.aria-pressed]="verClave()" (click)="verClave.set(!verClave())">{{ verClave() ? 'Ocultar' : 'Ver' }} contraseñas</button>
       <button>Guardar</button>
     </form>
     <p role="status" [class]="claveMsg().ok ? 'ok' : 'mal'">{{ claveMsg().texto }}</p>
+    </details>
 
     @if (gym.usuario()?.rol === 'admin' && !gym.usuario()?.cambiar_clave) {
-      <h2>Personal</h2>
+      <details class="seccion">
+      <summary>Personal</summary>
       <form ngNativeValidate class="panel" (ngSubmit)="guardarUsuario()">
         <h3>{{ editandoUsuario() ? 'Editar a ' + editandoUsuario()!.usuario : 'Nuevo usuario' }}</h3>
-        <label>Nombre <span aria-hidden="true">*</span> <input name="nombre" [(ngModel)]="nuevo.nombre" required></label>
+        <label>Nombre <input name="nombre" [(ngModel)]="nuevo.nombre" required></label>
         @if (!editandoUsuario()) {
-          <label>Usuario <span aria-hidden="true">*</span> <input name="usuario" [(ngModel)]="nuevo.usuario" required autocomplete="off"></label>
+          <label>Usuario <input name="usuario" [(ngModel)]="nuevo.usuario" required autocomplete="off"></label>
         }
-        <label>{{ editandoUsuario() ? 'Nueva contraseña (vacío = no cambiar)' : 'Contraseña' }} @if (!editandoUsuario()) { <span aria-hidden="true">*</span> }
+        <label>{{ editandoUsuario() ? 'Nueva contraseña (vacío = no cambiar)' : 'Contraseña' }}
           <input name="clave" type="password" minlength="4" [(ngModel)]="nuevo.clave" [required]="!editandoUsuario()" autocomplete="new-password">
         </label>
         <label>Rol
@@ -55,14 +61,17 @@ import { GymService, Plan, PlanNuevo, Producto, Rol, Usuario, duracionTexto } fr
         }
       </table></div>
 
-      <h2>Productos</h2>
+      </details>
+
+      <details class="seccion">
+      <summary>Productos</summary>
       <p>Para dar de alta productos o sumar mercancía usa «Agregar inventario» en la pantalla principal.</p>
       @if (producto(); as p) {
         <form ngNativeValidate class="panel" (ngSubmit)="guardarProducto(p)">
           <h3>Editar producto</h3>
-          <label>Nombre <span aria-hidden="true">*</span> <input name="prnombre" [(ngModel)]="prod.nombre" required autocomplete="off"></label>
-          <label>Precio <span aria-hidden="true">*</span> <input name="prprecio" type="number" min="0.01" step="0.01" [(ngModel)]="prod.precio" required></label>
-          <label>Existencia (conteo físico) <span aria-hidden="true">*</span> <input name="prexistencia" type="number" min="0" step="1" [(ngModel)]="prod.existencia" required></label>
+          <label>Nombre <input name="prnombre" [(ngModel)]="prod.nombre" required autocomplete="off"></label>
+          <label>Precio <input name="prprecio" type="number" min="0.01" step="0.01" [(ngModel)]="prod.precio" required></label>
+          <label>Existencia (conteo físico) <input name="prexistencia" type="number" min="0" step="1" [(ngModel)]="prod.existencia" required></label>
           <button>Guardar cambios</button>
           <button type="button" (click)="producto.set(null)">Cancelar</button>
         </form>
@@ -82,15 +91,18 @@ import { GymService, Plan, PlanNuevo, Producto, Rol, Usuario, duracionTexto } fr
         } @empty { <tr><td colspan="5">Aún no hay productos.</td></tr> }
       </table></div>
 
-      <h2>Planes</h2>
+      </details>
+
+      <details class="seccion">
+      <summary>Planes</summary>
       <form ngNativeValidate class="panel" (ngSubmit)="guardarPlan()">
         <h3>{{ editando() ? 'Editar plan' : 'Nuevo plan' }}</h3>
-        <label>Nombre <span aria-hidden="true">*</span> <input name="pnombre" [(ngModel)]="plan.nombre" required placeholder="Mensual, Semanal…" autocomplete="off"></label>
-        <label>Duración <span aria-hidden="true">*</span> <input name="duracion" type="number" min="1" step="1" [(ngModel)]="plan.duracion" required></label>
+        <label>Nombre <input name="pnombre" [(ngModel)]="plan.nombre" required placeholder="Mensual, Semanal…" autocomplete="off"></label>
+        <label>Duración <input name="duracion" type="number" min="1" step="1" [(ngModel)]="plan.duracion" required></label>
         <label>Unidad
           <select name="unidad" [(ngModel)]="plan.unidad"><option value="meses">Meses</option><option value="dias">Días</option></select>
         </label>
-        <label>Precio <span aria-hidden="true">*</span> <input name="precio" type="number" min="0.01" step="0.01" [(ngModel)]="plan.precio" required></label>
+        <label>Precio <input name="precio" type="number" min="0.01" step="0.01" [(ngModel)]="plan.precio" required></label>
         <button>{{ editando() ? 'Guardar cambios' : 'Agregar plan' }}</button>
         @if (editando()) { <button type="button" (click)="limpiarPlan()">Cancelar</button> }
       </form>
@@ -110,36 +122,42 @@ import { GymService, Plan, PlanNuevo, Producto, Rol, Usuario, duracionTexto } fr
         } @empty { <tr><td colspan="5">Aún no hay planes. Agrega al menos uno para poder registrar socios.</td></tr> }
       </table></div>
 
-      <h2>Inscripción</h2>
+      </details>
+
+      <details class="seccion">
+      <summary>Inscripción</summary>
       <form ngNativeValidate class="panel" (ngSubmit)="guardarInscripcion()">
         <label>Precio de la inscripción <input name="inscripcion" type="number" min="0" step="0.01" [(ngModel)]="inscripcion" required></label>
         <button>Guardar</button>
       </form>
       <p role="status" [class]="msgInscripcion().ok ? 'ok' : 'mal'">{{ msgInscripcion().texto }}</p>
+      </details>
     }
   `
 })
 export class UsuariosComponent {
   gym = inject(GymService);
-  clave = { actual: '', nueva: '' };
-  claveMsg = signal({ ok: true, texto: '' });
+  private router = inject(Router);
+  clave = { actual: '', nueva: '', repetida: '' };
+  verClave = signal(false);
+  claveMsg = aviso({ ok: true, texto: '' });
   nuevo = { nombre: '', usuario: '', clave: '', rol: 'recepcion' as Rol };
   usuarios = signal<Usuario[]>([]);
-  error = signal('');
+  error = aviso('');
 
   planes = signal<Plan[]>([]);
   plan: PlanNuevo = { nombre: '', duracion: 1, unidad: 'meses', precio: 0 };
   editando = signal<Plan | null>(null);
-  errorPlan = signal('');
+  errorPlan = aviso('');
   inscripcion = 0;
-  msgInscripcion = signal({ ok: true, texto: '' });
+  msgInscripcion = aviso({ ok: true, texto: '' });
   duracionTexto = duracionTexto;
 
   editandoUsuario = signal<Usuario | null>(null);
   productos = signal<Producto[]>([]);
   producto = signal<Producto | null>(null);
   prod = { nombre: '', precio: 0, existencia: 0 };
-  errorProducto = signal('');
+  errorProducto = aviso('');
 
   constructor() { this.cargarTodo(); }
 
@@ -226,8 +244,9 @@ export class UsuariosComponent {
   }
 
   cambiarClave() {
+    if (this.clave.nueva !== this.clave.repetida) return this.claveMsg.set({ ok: false, texto: 'Las contraseñas nuevas no coinciden' });
     this.gym.cambiarClave(this.clave.actual, this.clave.nueva).subscribe({
-      next: () => { this.clave = { actual: '', nueva: '' }; this.claveMsg.set({ ok: true, texto: 'Contraseña actualizada' }); this.cargarTodo(); },
+      next: () => this.router.navigateByUrl('/'),
       error: e => this.claveMsg.set({ ok: false, texto: e.error?.error ?? 'Error de conexión' })
     });
   }

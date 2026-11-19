@@ -89,3 +89,11 @@ export function enlaceWhatsApp(s: Pick<Socio, 'nombre' | 'telefono' | 'vence' | 
     : `Hola ${s.nombre}, tu membresía del gimnasio vence el ${fecha} (en ${d} ${d === 1 ? 'día' : 'días'}). ¡Te esperamos para renovarla!`;
   return `https://wa.me/52${s.telefono}?text=${encodeURIComponent(texto)}`;
 }
+
+// Aviso que se borra solo a los pocos segundos (vuelve a `vacio`).
+export function aviso<T>(vacio: T, ms = 6000) {
+  const s = signal(vacio), set = s.set;
+  let t: ReturnType<typeof setTimeout> | undefined;
+  s.set = (v: T) => { clearTimeout(t); set(v); if (v !== vacio) t = setTimeout(() => set(vacio), ms); };
+  return s;
+}
