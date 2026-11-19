@@ -1,0 +1,5 @@
+node_modules/
+# datos reales de socios y hashes de claves
+*.db
+graphify-out/
+.DS_Store
