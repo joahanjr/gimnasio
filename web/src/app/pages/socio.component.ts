@@ -2,7 +2,7 @@ import { Component, Input, inject, signal } from '@angular/core';
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { FichaSocio, GymService, METODOS, Metodo, Pago, Plan, duracionTexto, enlaceWhatsApp, metodoTexto, aviso } from '../gym.service';
+import { FichaSocio, GymService, METODOS, Metodo, Pago, Plan, duracionTexto, enlaceWhatsApp, metodoTexto, aviso, enfocar } from '../gym.service';
 
 // Las fechas de SQLite vienen como "YYYY-MM-DD HH:MM:SS"; DatePipe necesita la "T".
 const iso = (f: string) => f.replace(' ', 'T');
@@ -58,7 +58,7 @@ const iso = (f: string) => f.replace(' ', 'T');
               @if (s.telefono) { <a class="boton" [href]="whatsapp(s)" target="_blank" rel="noopener" (click)="avisado()">Avisar por WhatsApp</a> }
             }
             <button type="button" (click)="abrirEdicion(s)" [attr.aria-expanded]="editando()">Editar datos</button>
-            <button type="button" (click)="guardar(s, !s.activo)">{{ s.activo ? 'Dar de baja' : 'Reactivar' }}</button>
+            <button type="button" [class.peligro]="s.activo" (click)="guardar(s, !s.activo)">{{ s.activo ? 'Dar de baja' : 'Reactivar' }}</button>
           </div>
         </div>
       </article>
@@ -66,7 +66,7 @@ const iso = (f: string) => f.replace(' ', 'T');
       <p role="status" [class]="mensaje().ok ? 'aviso ok' : 'aviso mal'">{{ mensaje().texto }}</p>
 
       @if (editando()) {
-        <form ngNativeValidate class="panel" (ngSubmit)="guardar(s, !!s.activo)">
+        <form ngNativeValidate class="panel edicion" (ngSubmit)="guardar(s, !!s.activo)">
           <h3>Editar datos</h3>
           <label>Nombre <input name="nombre" [(ngModel)]="datos.nombre" required autocomplete="off"></label>
           <label>Primer apellido <input name="apellido1" [(ngModel)]="datos.apellido1" required autocomplete="off"></label>
@@ -103,6 +103,7 @@ const iso = (f: string) => f.replace(' ', 'T');
             <select name="metodo" [(ngModel)]="pago.metodo">@for (m of metodos; track m) { <option [value]="m">{{ metodoTexto(m) }}</option> }</select>
           </label>
           <label>Pagó <input name="pagado" type="number" min="0" step="0.01" [(ngModel)]="pago.pagado" required></label>
+          <button type="button" (click)="pago.pagado = total(s)">Pagó completo ({{ total(s) | currency }})</button>
           @if (pago.pagado !== null) {
             <p [class]="saldoNuevo(s) < 0 ? 'mal' : 'ok'">
               @if (saldoNuevo(s) < 0) { Quedará un saldo pendiente de {{ -saldoNuevo(s) | currency }} }
@@ -116,13 +117,13 @@ const iso = (f: string) => f.replace(' ', 'T');
 
       <h3>Pagos</h3>
       <div class="tabla" tabindex="0" role="region" aria-label="Pagos"><table>
-        <tr><th>Fecha</th><th>Plan</th><th>Cobro</th><th>Pagó</th><th>Forma de pago</th>@if (esAdmin()) { <th></th> }</tr>
+        <tr><th>Fecha</th><th>Plan</th><th>Cobro</th><th>Pagó</th><th>Forma de pago</th>@if (esAdmin()) { <th>Acciones</th> }</tr>
         @for (p of s.pagos; track p.id) {
           <tr [class.anulado]="p.anulado">
             <td>{{ iso(p.fecha) | date:'dd/MM/yyyy' }}</td><td>{{ p.plan }}</td><td>{{ p.cargo | currency }}</td>
             <td>@if (p.anulado) { <s>{{ p.monto | currency }}</s> Anulado } @else { {{ p.monto | currency }} }</td>
             <td>{{ metodoTexto(p.metodo) }}</td>
-            @if (esAdmin()) { <td>@if (p === ultimoVigente(s) && p.anulable) { <button type="button" (click)="anular(p)">Anular</button> }</td> }
+            @if (esAdmin()) { <td>@if (p === ultimoVigente(s) && p.anulable) { <button type="button" class="peligro" (click)="anular(p)">Anular</button> }</td> }
           </tr>
         } @empty { <tr><td colspan="6">Sin pagos.</td></tr> }
       </table></div>
@@ -146,7 +147,7 @@ export class SocioComponent {
   inscripcion = signal(0);
   duracionTexto = duracionTexto;
   cobrando = signal(false);
-  mensaje = aviso({ ok: true, texto: '' });
+  mensaje = aviso();
   errorCarga = signal(''); // este no se borra: sin ficha no hay nada más que mostrar
   pago = { plan_id: null as number | null, inscripcion: false, descuento: 0, pagado: null as number | null, metodo: 'efectivo' as Metodo };
   editando = signal(false);
@@ -194,6 +195,7 @@ export class SocioComponent {
     const suPlan = this.planes().some(p => p.id === s.plan_id) ? s.plan_id : null;
     this.pago = { plan_id: suPlan, inscripcion: !s.ultimo_pago, descuento: 0, pagado: null, metodo: 'efectivo' }; // inscripción solo en su primer pago
     this.cobrando.set(true);
+    enfocar('form.cobro');
   }
 
   pagar() {
@@ -213,6 +215,7 @@ export class SocioComponent {
   abrirEdicion(s: FichaSocio) {
     this.datos = { nombre: s.nombre, apellido1: s.apellido1 ?? '', apellido2: s.apellido2, telefono: s.telefono ?? '' };
     this.editando.set(!this.editando());
+    if (this.editando()) enfocar('form.edicion');
   }
 
   // Guarda los datos y, de paso, el estado de alta/baja.

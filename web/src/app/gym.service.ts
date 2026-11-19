@@ -24,6 +24,7 @@ export interface Producto { id: number; nombre: string; precio: number; existenc
 export class GymService {
   private http = inject(HttpClient);
   usuario = signal<Usuario | null>(null);
+  guardando = signal(0); // envíos en curso (POST/PUT/DELETE)
 
   login(usuario: string, clave: string) { return this.http.post<Usuario>('/api/login', { usuario, clave }).pipe(tap(u => this.usuario.set(u))); }
   yo() { return this.http.get<Usuario>('/api/yo').pipe(tap(u => this.usuario.set(u))); }
@@ -90,10 +91,14 @@ export function enlaceWhatsApp(s: Pick<Socio, 'nombre' | 'telefono' | 'vence' | 
   return `https://wa.me/52${s.telefono}?text=${encodeURIComponent(texto)}`;
 }
 
-// Aviso que se borra solo a los pocos segundos (vuelve a `vacio`).
-export function aviso<T>(vacio: T, ms = 6000) {
-  const s = signal(vacio), set = s.set;
+// Mensaje de éxito que se borra solo; los errores se quedan hasta el siguiente mensaje.
+export function aviso(ms = 6000) {
+  const vacio = { ok: true, texto: '' }, s = signal(vacio), set = s.set;
   let t: ReturnType<typeof setTimeout> | undefined;
-  s.set = (v: T) => { clearTimeout(t); set(v); if (v !== vacio) t = setTimeout(() => set(vacio), ms); };
+  s.set = v => { clearTimeout(t); set(v); if (v.ok && v.texto) t = setTimeout(() => set(vacio), ms); };
   return s;
 }
+
+// Lleva el foco al primer campo de un formulario recién abierto (espera a que Angular lo pinte).
+export const enfocar = (selector: string) =>
+  setTimeout(() => document.querySelector<HTMLElement>(`${selector} :is(input, select)`)?.focus());

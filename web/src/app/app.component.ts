@@ -18,7 +18,7 @@ import { GymService } from './gym.service';
       <span class="usuario">{{ u.rol === 'admin' ? 'Admin' : 'Recepción' }}: {{ u.nombre }} <button (click)="salir()">Cerrar sesión</button></span>
     </nav>
     }
-    <main><router-outlet /></main>
+    <main [attr.aria-busy]="gym.guardando() > 0"><router-outlet /></main>
   `
 })
 export class AppComponent {

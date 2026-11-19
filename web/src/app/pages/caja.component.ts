@@ -30,14 +30,14 @@ const TIPOS: Record<string, string> = { pago: 'Membresías', visita: 'Visitas', 
 
       <h3>Movimientos</h3>
       <div class="tabla" tabindex="0" role="region" aria-label="Movimientos del día"><table>
-        <tr><th>Hora</th><th>Tipo</th><th>Concepto</th><th>Forma de pago</th><th>Cobró</th><th>Monto</th>@if (esAdmin()) { <th></th> }</tr>
+        <tr><th>Hora</th><th>Tipo</th><th>Concepto</th><th>Forma de pago</th><th>Cobró</th><th>Monto</th>@if (esAdmin()) { <th>Acciones</th> }</tr>
         @for (m of c.movimientos; track m.tipo + m.id) {
           <tr [class.anulado]="m.anulado">
             <td>{{ m.fecha.replace(' ', 'T') | date:'HH:mm' }}</td><td>{{ tipos[m.tipo] }}</td><td>{{ m.concepto }}</td>
             <td>{{ metodoTexto(m.metodo) }}</td><td>{{ m.usuario }}</td>
             <td>@if (m.anulado) { <s>{{ m.monto | currency }}</s> Anulado } @else { {{ m.monto | currency }} }</td>
             @if (esAdmin()) {
-              <td>@if (!m.anulado && m.tipo !== 'pago') { <button type="button" (click)="anular(m)">Anular</button> }</td>
+              <td>@if (!m.anulado && m.tipo !== 'pago') { <button type="button" class="peligro" (click)="anular(m)">Anular</button> }</td>
             }
           </tr>
         } @empty { <tr><td colspan="7">No hubo cobros ese día.</td></tr> }
@@ -50,7 +50,7 @@ export class CajaComponent {
   private gym = inject(GymService);
   fecha = new Date().toLocaleDateString('sv');
   corte = signal<Corte | null>(null);
-  mensaje = aviso({ ok: true, texto: '' });
+  mensaje = aviso();
   esAdmin = () => this.gym.usuario()?.rol === 'admin';
   tipos = TIPOS;
   metodoTexto = metodoTexto;

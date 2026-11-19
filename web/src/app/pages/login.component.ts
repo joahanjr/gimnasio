@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { GymService, aviso } from '../gym.service';
+import { GymService } from '../gym.service';
 
 @Component({
   standalone: true,
@@ -12,7 +12,8 @@ import { GymService, aviso } from '../gym.service';
       <label>Usuario <input name="usuario" [(ngModel)]="usuario" required [autofocus]="!usuario" autocomplete="off" list="usuarios-guardados"></label>
       <datalist id="usuarios-guardados">@for (u of guardados; track u) { <option [value]="u"></option> }</datalist>
       <!-- new-password: que el navegador no autollene la de otra persona -->
-      <label>Contraseña <input name="clave" type="password" [(ngModel)]="clave" required [autofocus]="!!usuario" autocomplete="new-password"></label>
+      <label>Contraseña <input name="clave" [type]="verClave() ? 'text' : 'password'" [(ngModel)]="clave" required [autofocus]="!!usuario" autocomplete="new-password"></label>
+      <button type="button" [attr.aria-pressed]="verClave()" (click)="verClave.set(!verClave())">{{ verClave() ? 'Ocultar' : 'Ver' }} contraseña</button>
       <button>Entrar</button>
     </form>
     <p role="alert" class="mal">{{ error() }}</p>
@@ -25,7 +26,8 @@ export class LoginComponent {
   guardados: string[] = leerGuardados();
   usuario = this.guardados[0] ?? '';
   clave = '';
-  error = aviso('');
+  error = signal('');
+  verClave = signal(false);
 
   entrar() {
     this.gym.login(this.usuario, this.clave).subscribe({

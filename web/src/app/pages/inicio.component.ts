@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { GymService, METODOS, Metodo, Plan, Producto, Socio, duracionTexto, metodoTexto, aviso } from '../gym.service';
+import { GymService, METODOS, Metodo, Plan, Producto, Socio, duracionTexto, metodoTexto, aviso, enfocar } from '../gym.service';
 
 type Accion = 'socio' | 'venta' | 'inventario' | 'visita';
 
@@ -51,7 +51,9 @@ type Accion = 'socio' | 'venta' | 'inventario' | 'visita';
             </select>
           </label>
           @if (!planesActivos().length) { <p class="mal">El administrador aún no ha dado de alta planes.</p> }
-          <label>Foto <input name="foto" type="file" accept="image/*" (change)="fotoNueva = $any($event.target).files[0] ?? null"></label>
+          <label class="boton-archivo">{{ fotoNueva ? 'Foto: ' + fotoNueva.name : 'Agregar foto' }}
+            <input name="foto" type="file" accept="image/*" (change)="fotoNueva = $any($event.target).files[0] ?? null">
+          </label>
           <button>Guardar socio</button>
         </form>
       }
@@ -113,7 +115,7 @@ export class InicioComponent {
   planesActivos = signal<Plan[]>([]);
   duracionTexto = duracionTexto;
   accion = signal<Accion | null>(null);
-  mensaje = aviso({ ok: true, texto: '' });
+  mensaje = aviso();
 
   socio = { nombre: '', apellido1: '', apellido2: '', telefono: '', plan_id: null as number | null };
   venta: { producto: Producto | null; cantidad: number; metodo: Metodo } = { producto: null, cantidad: 1, metodo: 'efectivo' };
@@ -130,6 +132,7 @@ export class InicioComponent {
 
   abrir(a: Accion) {
     this.accion.set(this.accion() === a ? null : a);
+    if (this.accion()) enfocar('form.panel');
     if (a === 'venta' || a === 'inventario') this.gym.productos().subscribe(p => this.productos.set(p));
     if (a === 'socio') this.gym.planes().subscribe(p => this.planesActivos.set(p.filter(x => x.activo)));
   }

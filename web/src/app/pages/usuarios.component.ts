@@ -48,14 +48,14 @@ import { GymService, Plan, PlanNuevo, Producto, Rol, Usuario, duracionTexto, avi
       <p role="alert" class="mal">{{ error() }}</p>
 
       <div class="tabla" tabindex="0" role="region" aria-label="Personal"><table>
-        <tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th></th></tr>
+        <tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr>
         @for (u of usuarios(); track u.id) {
           <tr>
             <td>{{ u.nombre }}</td><td>{{ u.usuario }}</td><td>{{ u.rol === 'admin' ? 'Administrador' : 'Recepción' }}</td>
             <td [class]="u.activo ? 'ok' : 'mal'">{{ u.activo ? 'Activo' : 'Inactivo' }}</td>
             <td class="botones">
               <button type="button" (click)="editarUsuario(u)">Editar</button>
-              @if (u.id !== gym.usuario()?.id) { <button type="button" (click)="alternarUsuario(u)">{{ u.activo ? 'Desactivar' : 'Activar' }}</button> }
+              @if (u.id !== gym.usuario()?.id) { <button type="button" [class.peligro]="u.activo" (click)="alternarUsuario(u)">{{ u.activo ? 'Desactivar' : 'Activar' }}</button> }
             </td>
           </tr>
         }
@@ -78,7 +78,7 @@ import { GymService, Plan, PlanNuevo, Producto, Rol, Usuario, duracionTexto, avi
       }
       <p role="alert" class="mal">{{ errorProducto() }}</p>
       <div class="tabla" tabindex="0" role="region" aria-label="Productos"><table>
-        <tr><th>Producto</th><th>Precio</th><th>Existencia</th><th>Estado</th><th></th></tr>
+        <tr><th>Producto</th><th>Precio</th><th>Existencia</th><th>Estado</th><th>Acciones</th></tr>
         @for (p of productos(); track p.id) {
           <tr>
             <td>{{ p.nombre }}</td><td>{{ p.precio | currency }}</td><td>{{ p.existencia }}</td>
@@ -109,7 +109,7 @@ import { GymService, Plan, PlanNuevo, Producto, Rol, Usuario, duracionTexto, avi
       <p role="alert" class="mal">{{ errorPlan() }}</p>
 
       <div class="tabla" tabindex="0" role="region" aria-label="Planes"><table>
-        <tr><th>Plan</th><th>Duración</th><th>Precio</th><th>Estado</th><th></th></tr>
+        <tr><th>Plan</th><th>Duración</th><th>Precio</th><th>Estado</th><th>Acciones</th></tr>
         @for (p of planes(); track p.id) {
           <tr>
             <td>{{ p.nombre }}</td><td>{{ duracionTexto(p) }}</td><td>{{ p.precio | currency }}</td>
@@ -140,24 +140,24 @@ export class UsuariosComponent {
   private router = inject(Router);
   clave = { actual: '', nueva: '', repetida: '' };
   verClave = signal(false);
-  claveMsg = aviso({ ok: true, texto: '' });
+  claveMsg = aviso();
   nuevo = { nombre: '', usuario: '', clave: '', rol: 'recepcion' as Rol };
   usuarios = signal<Usuario[]>([]);
-  error = aviso('');
+  error = signal('');
 
   planes = signal<Plan[]>([]);
   plan: PlanNuevo = { nombre: '', duracion: 1, unidad: 'meses', precio: 0 };
   editando = signal<Plan | null>(null);
-  errorPlan = aviso('');
+  errorPlan = signal('');
   inscripcion = 0;
-  msgInscripcion = aviso({ ok: true, texto: '' });
+  msgInscripcion = aviso();
   duracionTexto = duracionTexto;
 
   editandoUsuario = signal<Usuario | null>(null);
   productos = signal<Producto[]>([]);
   producto = signal<Producto | null>(null);
   prod = { nombre: '', precio: 0, existencia: 0 };
-  errorProducto = aviso('');
+  errorProducto = signal('');
 
   constructor() { this.cargarTodo(); }
 
