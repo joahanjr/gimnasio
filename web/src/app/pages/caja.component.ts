@@ -12,6 +12,13 @@ const TIPOS: Record<string, string> = { pago: 'Membresías', visita: 'Visitas', 
     <h2>Corte de caja</h2>
     <form class="panel" (ngSubmit)="cargar()">
       <label>Día <input name="fecha" type="date" [(ngModel)]="fecha" (change)="cargar()" required></label>
+      <label>Reporte en Excel
+        <select name="periodo" [(ngModel)]="periodo">
+          <option value="dia">Del día</option><option value="semana">De la semana (lunes a domingo)</option><option value="mes">Del mes</option>
+        </select>
+      </label>
+      <a class="boton" [href]="'/api/reporte?fecha=' + fecha + '&periodo=' + periodo" download>Descargar Excel</a>
+      <p>Trae el resumen, los cobros, las entradas y los socios nuevos del periodo que contiene el día elegido.</p>
     </form>
 
     <p role="status" [class]="mensaje().ok ? 'aviso ok' : 'aviso mal'">{{ mensaje().texto }}</p>
@@ -49,6 +56,7 @@ const TIPOS: Record<string, string> = { pago: 'Membresías', visita: 'Visitas', 
 export class CajaComponent {
   private gym = inject(GymService);
   fecha = new Date().toLocaleDateString('sv');
+  periodo: 'dia' | 'semana' | 'mes' = 'mes';
   corte = signal<Corte | null>(null);
   mensaje = aviso();
   esAdmin = () => this.gym.usuario()?.rol === 'admin';

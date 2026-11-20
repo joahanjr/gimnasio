@@ -22,8 +22,9 @@ Pensado para usarse en la computadora de la recepción por dos tipos de usuario:
 - Forma de pago: efectivo, tarjeta o transferencia.
 - Anulación de pagos (el vencimiento regresa al anterior), ventas (la mercancía vuelve al inventario) y visitas. Solo el administrador.
 
-**Corte de caja**
+**Corte de caja y reportes**
 - Todo lo cobrado en un día, con totales por concepto, forma de pago y persona que cobró.
+- Reporte en Excel del día, la semana (lunes a domingo) o el mes: resumen, cobros, entradas y socios nuevos.
 
 **Avisos por WhatsApp**
 - Lista de socios con membresía por vencer o vencida en los últimos 30 días.
@@ -89,6 +90,14 @@ Abre http://localhost:4200. Las llamadas a `/api` se redirigen a la API mediante
 
 La app pide cambiar esa contraseña antes de dejar hacer cualquier otra cosa. Después, desde **Usuarios**, da de alta los planes, el precio de inscripción y al personal de recepción.
 
+## Instalar en la computadora del gimnasio (Windows)
+
+```bash
+./empaquetar.sh   # genera gimnasio-windows.zip (web compilada + API + instalador)
+```
+
+En la computadora del gimnasio: instalar Node.js 22 LTS, descomprimir el zip en `C:\Gimnasio\app` y ejecutar `instalar.bat` como administrador. La app queda como un solo programa en http://localhost:3000, arranca sola al encender la computadora y guarda los datos en `C:\Gimnasio`. Instrucciones completas en [`windows/LEEME.txt`](windows/LEEME.txt).
+
 ## Configuración
 
 Variables de entorno opcionales de la API:
@@ -97,6 +106,7 @@ Variables de entorno opcionales de la API:
 |----------|-------------|----------|
 | `DB_FILE` | `gimnasio.db` | Archivo de la base de datos |
 | `BACKUP_DIR` | `respaldos` | Carpeta de los respaldos diarios |
+| `PORT` | `3000` | Puerto de la app |
 
 Conviene que `BACKUP_DIR` apunte a otro disco o a una carpeta sincronizada (Drive, Dropbox): si el respaldo está en el mismo disco que la base, una falla del disco se lleva los dos.
 

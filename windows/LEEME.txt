@@ -1,0 +1,41 @@
+GIMNASIO - Instalación en Windows
+=================================
+
+Necesitas: Windows 10 u 11 de 64 bits e internet (solo durante la instalación).
+
+INSTALAR (la primera vez)
+1. Instala Node.js 22 LTS: https://nodejs.org/dist/latest-v22.x/
+   Descarga el archivo que termina en "x64.msi" y dale "Siguiente" a todo.
+   Importante: tiene que ser la versión 22, no la más nueva.
+2. Descomprime gimnasio-windows.zip en C:\Gimnasio\app
+   (la carpeta C:\Gimnasio\app debe tener instalar.bat dentro).
+3. Clic derecho en instalar.bat > "Ejecutar como administrador".
+4. Se abre la app en el navegador. Entra con usuario admin y contraseña admin;
+   te pedirá cambiarla. Después, en Usuarios, da de alta planes y personal.
+
+Desde ese momento la app arranca sola cada vez que se enciende la computadora.
+Para abrirla usa el acceso directo "Gimnasio" del escritorio (o http://localhost:3000).
+Desde otra computadora de la misma red: http://IP-DE-ESTA-COMPUTADORA:3000
+(la cámara de "Entrada QR" solo funciona en esta computadora; el lector USB, en cualquiera).
+
+DÓNDE QUEDAN LOS DATOS
+- Base de datos:  C:\Gimnasio\datos\gimnasio.db
+- Respaldos:      C:\Gimnasio\respaldos (uno por día, se guardan los últimos 14)
+- Errores:        C:\Gimnasio\datos\registro.log  (mándalo si algo falla)
+- Configuración:  C:\Gimnasio\config.bat
+
+RESPALDOS FUERA DE LA COMPUTADORA (muy recomendado)
+Si el disco falla, se pierde todo lo que esté en él. Opciones:
+- Google Drive para escritorio: en sus preferencias, agrega la carpeta
+  C:\Gimnasio\respaldos para que se suba sola.
+- USB conectada siempre: abre C:\Gimnasio\config.bat con el Bloc de notas y
+  cambia BACKUP_DIR por la carpeta de la USB. Reinicia la computadora.
+
+ACTUALIZAR A UNA VERSIÓN NUEVA
+1. Descomprime el zip nuevo encima de C:\Gimnasio\app (reemplaza los archivos).
+2. Clic derecho en instalar.bat > "Ejecutar como administrador".
+Los datos no se tocan.
+
+DESINSTALAR
+Clic derecho en desinstalar.bat > "Ejecutar como administrador".
+Los datos se quedan en C:\Gimnasio por si los necesitas.

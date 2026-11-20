@@ -1,7 +1,8 @@
 process.env.DB_FILE = ':memory:';
 const test = require('node:test');
 const assert = require('node:assert');
-const { app, extenderVigencia, crearUsuario, diasHasta, respaldar, totalesCorte } = require('./server');
+const { app, extenderVigencia, crearUsuario, diasHasta, respaldar, totalesCorte, periodoDe } = require('./server');
+const ExcelJS = require('exceljs');
 
 test('extenderVigencia', () => {
   assert.equal(extenderVigencia(null, 1, 'meses', '2026-01-15'), '2026-02-15');          // sin membresía: desde hoy
@@ -271,6 +272,54 @@ test('entrada con código QR (lector USB o cámara)', async () => {
     // Dado de baja: el QR no lo deja entrar.
     await req('PUT', `/socios/${ana.id}`, { nombre: 'Qr', apellido1: 'Prueba', telefono: '5511112222', activo: false });
     assert.equal((await post('/entradas', { codigo: nuevo.codigo })).status, 400);
+  } finally {
+    srv.close();
+  }
+});
+
+test('periodoDe: día, semana de lunes a domingo y mes', () => {
+  assert.deepEqual(periodoDe('2026-11-20', 'dia'), ['2026-11-20', '2026-11-20']);
+  assert.deepEqual(periodoDe('2026-11-20', 'semana'), ['2026-11-16', '2026-11-22']); // viernes
+  assert.deepEqual(periodoDe('2026-11-16', 'semana'), ['2026-11-16', '2026-11-22']); // lunes
+  assert.deepEqual(periodoDe('2026-11-22', 'semana'), ['2026-11-16', '2026-11-22']); // domingo
+  assert.deepEqual(periodoDe('2026-12-31', 'semana'), ['2026-12-28', '2027-01-03']); // cruza de año
+  assert.deepEqual(periodoDe('2026-11-20', 'mes'), ['2026-11-01', '2026-11-30']);
+  assert.deepEqual(periodoDe('2028-02-10', 'mes'), ['2028-02-01', '2028-02-29']);   // bisiesto
+  assert.deepEqual(periodoDe('2026-12-05', 'mes'), ['2026-12-01', '2026-12-31']);
+  assert.equal(periodoDe('2026-02-31', 'mes'), null);
+  assert.equal(periodoDe('2026-11-20', 'año'), null);
+  assert.equal(periodoDe(undefined, 'dia'), null);
+});
+
+test('reporte en Excel', async () => {
+  const srv = app.listen(0);
+  const url = `http://localhost:${srv.address().port}/api`;
+  let cookie = '';
+  const req = (metodo, p, body) => fetch(url + p, { method: metodo, headers: { 'Content-Type': 'application/json', cookie }, body: body && JSON.stringify(body) });
+  try {
+    assert.equal((await req('GET', '/reporte?periodo=mes')).status, 401);
+    cookie = (await req('POST', '/login', { usuario: 'admin', clave: 'nueva123' })).headers.get('set-cookie').split(';')[0];
+    assert.equal((await req('GET', '/reporte?fecha=2026-13-01&periodo=mes')).status, 400);
+    const hoyLocal = new Date().toLocaleDateString('sv');
+    const corte = await (await req('GET', `/corte?fecha=${hoyLocal}`)).json();
+    const r = await req('GET', `/reporte?fecha=${hoyLocal}&periodo=mes`);
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-disposition'), /reporte-\d{4}-\d{2}-01-a-\d{4}-\d{2}-\d{2}\.xlsx/);
+    const libro = new ExcelJS.Workbook();
+    await libro.xlsx.load(Buffer.from(await r.arrayBuffer()));
+    assert.deepEqual(libro.worksheets.map(h => h.name), ['Resumen', 'Movimientos', 'Entradas', 'Socios nuevos']);
+    // Los datos de las pruebas anteriores son de hoy: el total del mes coincide con el corte del día.
+    assert.equal(libro.getWorksheet('Resumen').getCell('B2').value, corte.total);
+    const mov = libro.getWorksheet('Movimientos');
+    assert.equal(mov.rowCount - 1, corte.movimientos.length);
+    assert.equal(mov.getRow(1).getCell(6).value, 'Monto');
+    assert.ok(mov.getRow(2).getCell(1).value instanceof Date);
+    assert.ok(libro.getWorksheet('Entradas').rowCount > 1);
+    assert.ok(libro.getWorksheet('Socios nuevos').rowCount > 1);
+    // Un día sin movimientos también genera el archivo.
+    const vacio = await req('GET', '/reporte?fecha=2020-01-01&periodo=dia');
+    assert.equal(vacio.status, 200);
+    assert.match(vacio.headers.get('content-disposition'), /reporte-2020-01-01\.xlsx/);
   } finally {
     srv.close();
   }

@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const QRCode = require('qrcode');
+const ExcelJS = require('exceljs');
 
 const db = new Database(process.env.DB_FILE || 'gimnasio.db');
 db.pragma('foreign_keys = ON');
@@ -569,19 +570,104 @@ app.get('/api/ventas', (req, res) => {
 });
 
 // Corte de caja: todo lo cobrado en el día. Los anulados se listan pero no suman.
-app.get('/api/corte', (req, res) => {
-  const movimientos = db.prepare(`
+// Cobros (membresías, visitas y ventas) entre dos fechas, incluidos los anulados (los totales los ignoran).
+function movimientosEntre(desde, hasta) {
+  return db.prepare(`
     WITH mov AS (
       SELECT 'pago' AS tipo, p.id, p.fecha, s.nombre_completo || ' · ' || p.plan
           || coalesce(' (con ' || (SELECT group_concat(o.nombre_completo, ', ') FROM pago_acompanantes a JOIN socios o ON o.id = a.socio_id WHERE a.pago_id = p.id) || ')', '') AS concepto, p.monto, p.metodo, p.usuario_id, p.anulado
-        FROM pagos p JOIN socios s ON s.id = p.socio_id WHERE date(p.fecha) = $f
-      UNION ALL SELECT 'visita', id, fecha, 'Visita: ' || nombre, monto, metodo, usuario_id, anulado FROM visitas WHERE date(fecha) = $f
-      UNION ALL SELECT 'venta', id, fecha, cantidad || ' × ' || concepto, monto, metodo, usuario_id, anulado FROM ventas WHERE date(fecha) = $f
+        FROM pagos p JOIN socios s ON s.id = p.socio_id WHERE date(p.fecha) BETWEEN $desde AND $hasta
+      UNION ALL SELECT 'visita', id, fecha, 'Visita: ' || nombre, monto, metodo, usuario_id, anulado FROM visitas WHERE date(fecha) BETWEEN $desde AND $hasta
+      UNION ALL SELECT 'venta', id, fecha, cantidad || ' × ' || concepto, monto, metodo, usuario_id, anulado FROM ventas WHERE date(fecha) BETWEEN $desde AND $hasta
     )
     SELECT mov.tipo, mov.id, mov.fecha, mov.concepto, mov.monto, mov.metodo, coalesce(u.nombre, '—') AS usuario, mov.anulado IS NOT NULL AS anulado
-    FROM mov LEFT JOIN usuarios u ON u.id = mov.usuario_id ORDER BY mov.fecha DESC`).all({ f: req.query.fecha || hoy() })
+    FROM mov LEFT JOIN usuarios u ON u.id = mov.usuario_id ORDER BY mov.fecha DESC`).all({ desde, hasta })
     .map(m => ({ ...m, anulado: !!m.anulado }));
+}
+
+app.get('/api/corte', (req, res) => {
+  const f = req.query.fecha || hoy();
+  const movimientos = movimientosEntre(f, f);
   res.json({ movimientos, ...totalesCorte(movimientos) });
+});
+
+// Día, semana (lunes a domingo) o mes calendario que contiene `fecha`. null si algo no es válido.
+function periodoDe(fecha, periodo) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha ?? '') || !['dia', 'semana', 'mes'].includes(periodo)) return null;
+  const [a, m, d] = fecha.split('-').map(Number);
+  const dia = (y, mo, da) => new Date(Date.UTC(y, mo - 1, da)).toISOString().slice(0, 10);
+  if (dia(a, m, d) !== fecha) return null; // 2026-02-31 y similares
+  if (periodo === 'semana') { const lunes = d - (new Date(Date.UTC(a, m - 1, d)).getUTCDay() + 6) % 7; return [dia(a, m, lunes), dia(a, m, lunes + 6)]; }
+  if (periodo === 'mes') return [dia(a, m, 1), dia(a, m + 1, 0)];
+  return [fecha, fecha];
+}
+
+const TIPOS_TEXTO = { pago: 'Membresías', visita: 'Visitas', venta: 'Ventas' };
+const METODOS_TEXTO = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', transferencia: 'Transferencia' };
+// "2026-11-20 09:15:00" (hora local guardada) → fecha de Excel con la misma hora, sin corrimiento de zona.
+const fechaExcel = t => { const [a, m, d, h = 0, mi = 0, se = 0] = t.split(/[-: T]/).map(Number); return new Date(Date.UTC(a, m - 1, d, h, mi, se)); };
+
+app.get('/api/reporte', async (req, res) => {
+  const rango = periodoDe(req.query.fecha, req.query.periodo);
+  if (!rango) return res.status(400).json({ error: 'Periodo inválido' });
+  const [desde, hasta] = rango;
+  const movimientos = movimientosEntre(desde, hasta).reverse(); // del más antiguo al más reciente
+  const t = totalesCorte(movimientos);
+  const entradas = db.prepare(`SELECT e.fecha, s.id, s.nombre_completo, coalesce(u.nombre, '—') AS usuario FROM entradas e
+    JOIN socios s ON s.id = e.socio_id LEFT JOIN usuarios u ON u.id = e.usuario_id WHERE date(e.fecha) BETWEEN ? AND ? ORDER BY e.fecha`).all(desde, hasta);
+  const nuevos = db.prepare(`SELECT s.id, s.nombre_completo, s.telefono, s.creado, p.nombre AS plan FROM socios s
+    LEFT JOIN planes p ON p.id = s.plan_id WHERE date(s.creado) BETWEEN ? AND ? ORDER BY s.creado`).all(desde, hasta);
+
+  const libro = new ExcelJS.Workbook();
+  const PESOS = '"$"#,##0.00', FECHA_HORA = 'dd/mm/yyyy hh:mm';
+  const hoja = (nombre, columnas, filas) => {
+    const h = libro.addWorksheet(nombre, { views: [{ state: 'frozen', ySplit: 1 }] });
+    h.columns = columnas;
+    h.getRow(1).font = { bold: true };
+    h.addRows(filas);
+    if (filas.length) h.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: columnas.length } };
+    return h;
+  };
+
+  const r = libro.addWorksheet('Resumen');
+  r.columns = [{ width: 32 }, { width: 18 }];
+  const titulo = desde === hasta ? `Reporte del ${desde}` : `Reporte del ${desde} al ${hasta}`;
+  r.addRow([titulo]).font = { bold: true, size: 14 };
+  r.addRow(['Total cobrado', t.total]).font = { bold: true };
+  const bloque = (encabezado, datos, texto = k => k) => {
+    r.addRow([]);
+    r.addRow([encabezado, 'Total']).font = { bold: true };
+    for (const [k, v] of Object.entries(datos)) r.addRow([texto(k), v]);
+    if (!Object.keys(datos).length) r.addRow(['—', 0]);
+  };
+  bloque('Por concepto', t.por_tipo, k => TIPOS_TEXTO[k] ?? k);
+  bloque('Por forma de pago', t.por_metodo, k => METODOS_TEXTO[k] ?? k);
+  bloque('Por quién cobró', t.por_usuario);
+  r.addRow([]);
+  r.addRow(['Entradas de socios', entradas.length]);
+  r.addRow(['Visitas (pases de un día)', movimientos.filter(m => m.tipo === 'visita' && !m.anulado).length]);
+  r.addRow(['Socios nuevos', nuevos.length]);
+  r.addRow(['Cobros anulados (no suman)', movimientos.filter(m => m.anulado).length]);
+  r.getColumn(2).numFmt = PESOS;
+  for (const fila of [r.lastRow.number - 3, r.lastRow.number - 2, r.lastRow.number - 1, r.lastRow.number]) r.getCell(fila, 2).numFmt = '0';
+
+  hoja('Movimientos', [
+    { header: 'Fecha', width: 18, style: { numFmt: FECHA_HORA } }, { header: 'Tipo', width: 14 }, { header: 'Concepto', width: 44 },
+    { header: 'Forma de pago', width: 16 }, { header: 'Cobró', width: 18 }, { header: 'Monto', width: 14, style: { numFmt: PESOS } }, { header: 'Estado', width: 10 },
+  ], movimientos.map(m => [fechaExcel(m.fecha), TIPOS_TEXTO[m.tipo], m.concepto, METODOS_TEXTO[m.metodo] ?? m.metodo, m.usuario, m.monto, m.anulado ? 'Anulado' : '']));
+
+  hoja('Entradas', [
+    { header: 'Fecha', width: 18, style: { numFmt: FECHA_HORA } }, { header: 'Socio', width: 8 }, { header: 'Nombre', width: 32 }, { header: 'Registró', width: 18 },
+  ], entradas.map(e => [fechaExcel(e.fecha), e.id, e.nombre_completo, e.usuario]));
+
+  hoja('Socios nuevos', [
+    { header: 'Fecha de registro', width: 18, style: { numFmt: FECHA_HORA } }, { header: 'Socio', width: 8 }, { header: 'Nombre', width: 32 },
+    { header: 'Celular', width: 14 }, { header: 'Plan', width: 20 },
+  ], nuevos.map(s => [fechaExcel(s.creado), s.id, s.nombre_completo, s.telefono ?? '', s.plan ?? '']));
+
+  res.attachment(desde === hasta ? `reporte-${desde}.xlsx` : `reporte-${desde}-a-${hasta}.xlsx`);
+  res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(await libro.xlsx.writeBuffer());
 });
 
 function totalesCorte(movimientos) {
@@ -604,11 +690,19 @@ async function respaldar(dir = process.env.BACKUP_DIR || 'respaldos', conservar 
   for (const f of viejos) fs.unlinkSync(path.join(dir, f));
 }
 
+// Instalación local: la API también sirve la web compilada, así todo es un solo programa en http://localhost:3000.
+const WEB = path.join(__dirname, '..', 'web', 'dist', 'web', 'browser');
+if (fs.existsSync(WEB)) {
+  app.use(express.static(WEB));
+  app.get(/^\/(?!api(\/|$)).*/, (req, res) => res.sendFile(path.join(WEB, 'index.html'))); // rutas de Angular (/socio/3, /caja…)
+}
+
 if (require.main === module) {
   const copia = () => respaldar().catch(e => console.error('No se pudo hacer el respaldo:', e.message));
   copia();
   setInterval(copia, 6 * 3600e3); // cada 6 h: si la compu se apaga de noche, igual sale la del día
-  app.listen(3000, () => console.log('API en http://localhost:3000'));
+  const puerto = Number(process.env.PORT) || 3000;
+  app.listen(puerto, () => console.log(`${new Date().toLocaleString('sv')} Gimnasio en http://localhost:${puerto}`));
 }
 
-module.exports = { app, extenderVigencia, crearUsuario, diasHasta, respaldar, totalesCorte };
+module.exports = { app, extenderVigencia, crearUsuario, diasHasta, respaldar, totalesCorte, periodoDe };

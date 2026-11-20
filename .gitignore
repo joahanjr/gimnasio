@@ -5,3 +5,5 @@ graphify-out/
 .DS_Store
 # copias diarias de la base (datos reales)
 respaldos/
+paquete/
+gimnasio-windows.zip
