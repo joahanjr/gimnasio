@@ -5,7 +5,8 @@ import { firstValueFrom, tap } from 'rxjs';
 export interface Socio { id: number; nombre: string; apellido1: string | null; apellido2: string | null; nombre_completo: string; telefono?: string; vence: string | null; vigente: boolean;
   creado: string; tiene_foto: boolean; dias_restantes: number | null;
   plan_id: number | null; plan: string | null; saldo: number; // saldo > 0 a favor, < 0 pendiente
-  activo: number; avisado: string | null; }
+  activo: number; avisado: string | null; codigo: string; }
+export type Entrada = Socio & { repetida: boolean };
 export type Metodo = 'efectivo' | 'tarjeta' | 'transferencia';
 export const METODOS: Metodo[] = ['efectivo', 'tarjeta', 'transferencia'];
 export interface Pago { id: number; fecha: string; plan: string; monto: number; cargo: number; metodo: Metodo; anulado: boolean; anulable: boolean; pagado_por: string | null; acompanantes: string | null; }
@@ -47,6 +48,8 @@ export class GymService {
   avisos(dias = 7) { return this.http.get<Socio[]>('/api/avisos', { params: { dias } }); }
   marcarAviso(id: number) { return this.http.post<Socio>(`/api/socios/${id}/aviso`, {}); }
   registrarEntrada(socio_id: number) { return this.http.post<Socio>('/api/entradas', { socio_id }); }
+  entradaQR(codigo: string) { return this.http.post<Entrada>('/api/entradas', { codigo }); }
+  nuevoCodigo(id: number) { return this.http.post<Socio>(`/api/socios/${id}/codigo`, {}); }
   ficha(id: number) { return this.http.get<FichaSocio>(`/api/socios/${id}`); }
   async guardarFoto(id: number, archivo: File) {
     const foto = await reducirFoto(archivo);
@@ -103,3 +106,14 @@ export function aviso(ms = 6000) {
 // Lleva el foco al primer campo de un formulario recién abierto (espera a que Angular lo pinte).
 export const enfocar = (selector: string) =>
   setTimeout(() => document.querySelector<HTMLElement>(`${selector} :is(input, select)`)?.focus());
+
+// Código del QR de entrada (16 caracteres hexadecimales, igual que en la API).
+export const CODIGO_QR = /^[0-9a-f]{16}$/i;
+
+// Lo que se muestra al pasar el QR, en recepción o en la pantalla de la cámara.
+export function avisoEntrada(s: Entrada) {
+  const debe = s.saldo < 0 ? ` · Debe $${(-s.saldo).toFixed(2)}` : '';
+  const ya = s.repetida ? ' (ya había entrado hace unos minutos)' : '';
+  if (!s.vigente) return { ok: false, texto: `${s.nombre_completo}: membresía vencida, pasa a recepción a pagar${debe}${ya}` };
+  return { ok: !debe, texto: `Bienvenido, ${s.nombre_completo}${debe}${ya}` };
+}

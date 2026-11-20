@@ -11,6 +11,7 @@ Pensado para usarse en la computadora de la recepción por dos tipos de usuario:
 - Ficha con vigencia, saldo (pendiente o a favor), historial de pagos y de entradas.
 - Editar datos, dar de baja y reactivar (el historial nunca se borra).
 - Registro de entrada, con aviso si la membresía está vencida.
+- **Entrada con código QR**: cada socio tiene un QR (descargable para WhatsApp o imprimible como credencial). Se lee con un lector USB de códigos en el buscador de Inicio, o con la cámara web en *Entrada QR*. Si se pierde, se genera uno nuevo y el anterior deja de servir.
 
 **Cobros**
 - Planes por meses o por días, con precio de inscripción configurable.
@@ -118,3 +119,4 @@ Cubren el flujo completo (socio → pago → entrada), permisos por rol, anulaci
 - Los avisos de WhatsApp se envían a mano desde el enlace; el envío automático requeriría la API de WhatsApp Business.
 - El bloqueo por intentos fallidos vive en memoria y se reinicia al reiniciar la API.
 - Pensado para una sola computadora o red local; no incluye configuración para publicarlo en internet (HTTPS, dominio).
+- La cámara solo funciona en la computadora donde corre la app (`localhost`): los navegadores no dan la cámara a otros equipos de la red sin HTTPS.

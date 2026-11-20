@@ -170,3 +170,23 @@ tr.anulado td { color: var(--suave); }
 .seccion[open] > summary { margin-bottom: 1rem; color: var(--primario); }
 .seccion[open] > summary::after { rotate: 90deg; }
 @media (prefers-reduced-motion: reduce) { .seccion > summary::after { transition: none; } }
+
+/* Código QR de entrada (ficha). El QR va sobre blanco también en modo oscuro: así lo leen los lectores. */
+.credencial { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; padding: 1rem; margin-bottom: 1rem;
+  background: #fff; color: #0f172a; border: 1px solid var(--borde); border-radius: var(--radio); }
+.credencial img { width: 200px; height: 200px; }
+.credencial p { margin: 0; }
+@media print {
+  body * { visibility: hidden; }
+  .credencial, .credencial * { visibility: visible; }
+  .credencial { position: absolute; inset: 0 auto auto 0; border: 1px solid #000; }
+}
+
+/* Modo entrada con cámara */
+.camara { position: relative; max-width: 640px; aspect-ratio: 4 / 3; margin-bottom: 1rem; background: #000; border-radius: var(--radio); overflow: hidden; }
+.camara video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); /* como espejo, más natural para acomodar el celular */ }
+.resultado { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: 1.5rem;
+  background: color-mix(in srgb, var(--ok) 92%, #000); color: #fff; text-align: center; font-family: var(--titulos); font-size: 2rem; font-weight: 700; }
+.resultado.mal { background: color-mix(in srgb, #b91c1c 92%, #000); }
+.resultado img { width: 160px; height: 160px; border-radius: 50%; object-fit: cover; border: 4px solid #fff; }
+.resultado p { margin: 0; }

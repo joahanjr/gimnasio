@@ -223,6 +223,59 @@ test('plan de pareja o grupo: uno paga y a los demás se les activa', async () =
   }
 });
 
+test('entrada con código QR (lector USB o cámara)', async () => {
+  const srv = app.listen(0);
+  const url = `http://localhost:${srv.address().port}/api`;
+  let cookie = '';
+  const req = (metodo, p, body) => fetch(url + p, { method: metodo, headers: { 'Content-Type': 'application/json', cookie }, body: body && JSON.stringify(body) });
+  const post = (p, b) => req('POST', p, b), get = p => req('GET', p), json = r => r.then(x => x.json());
+  try {
+    cookie = (await post('/login', { usuario: 'admin', clave: 'nueva123' })).headers.get('set-cookie').split(';')[0];
+    const plan = (await json(get('/planes'))).find(p => p.nombre === 'Mensual');
+    const ana = await json(post('/socios', { nombre: 'Qr', apellido1: 'Prueba', telefono: '5511112222', plan_id: plan.id }));
+    assert.match(ana.codigo, /^[0-9A-F]{16}$/);
+    const todos = await json(get('/socios'));
+    assert.equal(new Set(todos.map(s => s.codigo)).size, todos.length); // todos tienen uno y no se repiten
+
+    // El lector puede mandar minúsculas o espacios: se normaliza.
+    const r1 = await post('/entradas', { codigo: ` ${ana.codigo.toLowerCase()} ` });
+    assert.equal(r1.status, 201);
+    const e1 = await r1.json();
+    assert.equal(e1.id, ana.id);
+    assert.equal(e1.repetida, false);
+    assert.equal(e1.vigente, false);         // sin pagos: la recepción ve que hay que cobrar
+    assert.equal(e1.tiene_foto, false);      // trae lo que la tarjeta necesita
+    // La cámara lo vuelve a leer al momento: no cuenta dos entradas.
+    const r2 = await post('/entradas', { codigo: ana.codigo });
+    assert.equal(r2.status, 200);
+    assert.equal((await r2.json()).repetida, true);
+    assert.equal((await json(get(`/socios/${ana.id}`))).entradas.length, 1);
+    // El botón de la ficha sí registra aunque haya entrado hace poco (es a propósito).
+    assert.equal((await post('/entradas', { socio_id: ana.id })).status, 201);
+
+    assert.equal((await post('/entradas', { codigo: 'ABC' })).status, 400);
+    assert.equal((await post('/entradas', { codigo: '0000000000000000' })).status, 404);
+
+    // QR nuevo: el anterior deja de funcionar.
+    const nuevo = await json(post(`/socios/${ana.id}/codigo`));
+    assert.notEqual(nuevo.codigo, ana.codigo);
+    assert.equal((await post('/entradas', { codigo: ana.codigo })).status, 404);
+    assert.equal((await post('/socios/9999/codigo')).status, 404);
+
+    // Imagen del QR
+    const qr = await get(`/socios/${ana.id}/qr`);
+    assert.equal(qr.headers.get('content-type'), 'image/png');
+    assert.deepEqual([...new Uint8Array(await qr.arrayBuffer()).slice(1, 4)], [80, 78, 71]); // "PNG"
+    assert.equal((await get('/socios/9999/qr')).status, 404);
+
+    // Dado de baja: el QR no lo deja entrar.
+    await req('PUT', `/socios/${ana.id}`, { nombre: 'Qr', apellido1: 'Prueba', telefono: '5511112222', activo: false });
+    assert.equal((await post('/entradas', { codigo: nuevo.codigo })).status, 400);
+  } finally {
+    srv.close();
+  }
+});
+
 test('las migraciones se pueden correr varias veces sobre la misma base', () => {
   const { execFileSync } = require('node:child_process');
   const os = require('node:os'), path = require('node:path'), fs = require('node:fs');

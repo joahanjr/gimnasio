@@ -22,6 +22,8 @@ export const routes: Routes = [
   { path: '', component: InicioComponent, title: 'Clientes', canActivate: [conSesion] },
   { path: 'usuarios', component: UsuariosComponent, title: 'Usuarios', canActivate: [conSesion] },
   { path: 'socio/:id', component: SocioComponent, title: 'Socio', canActivate: [conSesion] },
+  { path: 'entrada', loadComponent: () => import('./pages/entrada.component').then(m => m.EntradaComponent), // con jsQR: se descarga solo al usarla
+     title: 'Entrada con QR', canActivate: [conSesion] },
   { path: 'caja', component: CajaComponent, title: 'Corte de caja', canActivate: [conSesion] },
   { path: 'avisos', component: AvisosComponent, title: 'Avisos de vencimiento', canActivate: [conSesion] },
   { path: '**', redirectTo: '' }

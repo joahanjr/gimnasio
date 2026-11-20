@@ -3,6 +3,7 @@ const Database = require('better-sqlite3');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const QRCode = require('qrcode');
 
 const db = new Database(process.env.DB_FILE || 'gimnasio.db');
 db.pragma('foreign_keys = ON');
@@ -108,6 +109,13 @@ db.exec(`CREATE TABLE IF NOT EXISTS pago_acompanantes (
   vence_antes TEXT NOT NULL,           -- para regresar su vencimiento si se anula el pago ('' = no tenía)
   PRIMARY KEY (pago_id, socio_id)
 )`);
+// Código secreto del QR de entrada. Hexadecimal en mayúsculas: el lector USB lo teclea igual con cualquier distribución de teclado.
+const nuevoCodigo = () => crypto.randomBytes(8).toString('hex').toUpperCase();
+const CODIGO = /^[0-9A-F]{16}$/;
+agregarColumna('socios', 'codigo', 'TEXT');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS socios_codigo ON socios(codigo)');
+for (const { id } of db.prepare('SELECT id FROM socios WHERE codigo IS NULL').all())
+  db.prepare('UPDATE socios SET codigo = ? WHERE id = ?').run(nuevoCodigo(), id);
 // Último pago vigente que movió el vencimiento del socio, sea suyo o como acompañante.
 const ultimoPagoDe = id => db.prepare(`SELECT max(id) FROM (
   SELECT id FROM pagos WHERE socio_id = $id AND anulado IS NULL
@@ -371,8 +379,8 @@ app.post('/api/socios', (req, res) => {
   const { error, datos } = validarSocio(req.body);
   if (error) return res.status(400).json({ error });
   if (!db.prepare('SELECT 1 FROM planes WHERE id = ? AND activo = 1').get(req.body.plan_id)) return res.status(400).json({ error: 'Elige el plan del socio' });
-  const { lastInsertRowid } = db.prepare('INSERT INTO socios (nombre, apellido1, apellido2, telefono, plan_id) VALUES (?, ?, ?, ?, ?)')
-    .run(...datos, req.body.plan_id);
+  const { lastInsertRowid } = db.prepare('INSERT INTO socios (nombre, apellido1, apellido2, telefono, plan_id, codigo) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(...datos, req.body.plan_id, nuevoCodigo());
   res.status(201).json(fichaDe(lastInsertRowid));
 });
 
@@ -388,13 +396,32 @@ app.put('/api/socios/:id', (req, res) => {
 
 const BAJA = 'El socio está dado de baja; reactívalo desde su ficha';
 
+// Con el botón de la ficha llega socio_id; con el QR (lector USB o cámara), su código.
 app.post('/api/entradas', (req, res) => {
-  const socio = conEstado(db.prepare('SELECT * FROM socios WHERE id = ?').get(req.body.socio_id));
-  if (!socio) return res.status(404).json({ error: 'Socio no encontrado' });
+  const { socio_id, codigo } = req.body, conQR = codigo !== undefined;
+  const clave = conQR ? String(codigo).trim().toUpperCase() : null;
+  if (conQR && !CODIGO.test(clave)) return res.status(400).json({ error: 'Código QR no válido' });
+  const socio = conQR ? db.prepare('SELECT * FROM socios WHERE codigo = ?').get(clave) : db.prepare('SELECT * FROM socios WHERE id = ?').get(socio_id);
+  if (!socio) return res.status(404).json({ error: conQR ? 'Código QR no reconocido; puede ser uno viejo' : 'Socio no encontrado' });
   if (!socio.activo) return res.status(400).json({ error: BAJA });
+  // Un QR leído dos veces seguidas (la cámara lo ve varias veces) cuenta una sola entrada.
+  const repetida = conQR && !!db.prepare("SELECT 1 FROM entradas WHERE socio_id = ? AND fecha > datetime('now', 'localtime', '-5 minutes')").get(socio.id);
   // La entrada se registra siempre; la recepción decide qué hacer si está vencido.
-  db.prepare('INSERT INTO entradas (socio_id, usuario_id) VALUES (?, ?)').run(socio.id, req.usuario.id);
-  res.status(201).json(socio);
+  if (!repetida) db.prepare('INSERT INTO entradas (socio_id, usuario_id) VALUES (?, ?)').run(socio.id, req.usuario.id);
+  res.status(repetida ? 200 : 201).json({ ...fichaDe(socio.id), repetida });
+});
+
+// QR perdido o compartido: se genera otro y el anterior deja de funcionar.
+app.post('/api/socios/:id/codigo', (req, res) => {
+  const s = db.prepare('UPDATE socios SET codigo = ? WHERE id = ? RETURNING id').get(nuevoCodigo(), req.params.id);
+  if (!s) return res.status(404).json({ error: 'Socio no encontrado' });
+  res.json(fichaDe(s.id));
+});
+
+app.get('/api/socios/:id/qr', async (req, res) => {
+  const s = db.prepare('SELECT codigo FROM socios WHERE id = ?').get(req.params.id);
+  if (!s) return res.status(404).json({ error: 'Socio no encontrado' });
+  res.set('Cache-Control', 'no-store').type('png').send(await QRCode.toBuffer(s.codigo, { width: 600, margin: 2, errorCorrectionLevel: 'M' }));
 });
 
 app.get('/api/entradas', (req, res) => {

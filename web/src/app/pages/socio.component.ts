@@ -63,6 +63,20 @@ const iso = (f: string) => f.replace(' ', 'T');
         </div>
       </article>
 
+      <details class="seccion qr">
+        <summary>Código QR de entrada</summary>
+        <div class="credencial">
+          <img [src]="'/api/socios/' + s.id + '/qr?c=' + s.codigo" [alt]="'Código QR de entrada de ' + s.nombre_completo" width="200" height="200">
+          <p><strong>#{{ s.id }} {{ s.nombre_completo }}</strong><br>Muestra este código al entrar al gimnasio.</p>
+        </div>
+        <div class="botones">
+          <a class="boton" [href]="'/api/socios/' + s.id + '/qr?c=' + s.codigo" [download]="'QR-socio-' + s.id + '.png'">Descargar QR</a>
+          <button type="button" (click)="imprimir()">Imprimir credencial</button>
+          <button type="button" class="peligro" (click)="nuevoCodigo(s)">Generar QR nuevo</button>
+        </div>
+        <p>Descárgalo para mandarlo por WhatsApp como imagen, o imprímelo como credencial.</p>
+      </details>
+
       <p role="status" [class]="mensaje().ok ? 'aviso ok' : 'aviso mal'">{{ mensaje().texto }}</p>
 
       @if (editando()) {
@@ -89,11 +103,12 @@ const iso = (f: string) => f.replace(' ', 'T');
           </label>
           @for (n of huecos(); track n) {
             <label>Acompañante {{ n + 1 }}
-              <select [name]="'acompanante' + n" [(ngModel)]="pago.acompanantes[n]" required>
-                @for (o of otros(s); track o.id) { <option [ngValue]="o.id">#{{ o.id }} {{ o.nombre_completo }}</option> }
-              </select>
+              <input [name]="'acompanante' + n" [(ngModel)]="pago.acompanantes[n]" list="socios-acompanantes" required
+                     pattern="#[0-9]+ .*" title="Escribe el nombre y elige a la persona de la lista" placeholder="Escribe su nombre" autocomplete="off">
             </label>
           }
+          <!-- Sugerencias mientras se escribe; el valor «#12 Nombre» lleva el número de socio -->
+          <datalist id="socios-acompanantes">@for (o of otros(s); track o.id) { <option [value]="'#' + o.id + ' ' + o.nombre_completo"></option> }</datalist>
           @if (huecos().length) { <p>El cobro queda en {{ s.nombre_completo }}; a sus acompañantes se les activa la membresía igual.</p> }
           <label class="casilla"><input name="inscripcion" type="checkbox" [(ngModel)]="pago.inscripcion"> Cobrar inscripción ({{ inscripcion() | currency }})</label>
           <label>Descuento <input name="descuento" type="number" min="0" [max]="precio() + cuotaInscripcion()" step="0.01" [(ngModel)]="pago.descuento"></label>
@@ -165,7 +180,7 @@ export class SocioComponent {
   cobrando = signal(false);
   mensaje = aviso();
   errorCarga = signal(''); // este no se borra: sin ficha no hay nada más que mostrar
-  pago = { plan_id: null as number | null, inscripcion: false, descuento: 0, pagado: null as number | null, metodo: 'efectivo' as Metodo, acompanantes: [] as number[] };
+  pago = { plan_id: null as number | null, inscripcion: false, descuento: 0, pagado: null as number | null, metodo: 'efectivo' as Metodo, acompanantes: [] as string[] };
   socios = signal<Socio[]>([]); // para elegir acompañantes en un plan de grupo
   editando = signal(false);
   datos = { nombre: '', apellido1: '', apellido2: '' as string | null, telefono: '' };
@@ -184,6 +199,16 @@ export class SocioComponent {
     this.cargar();
     this.gym.planes().subscribe(p => this.planes.set(p.filter(x => x.activo)));
     this.gym.ajustes().subscribe(a => this.inscripcion.set(a.inscripcion));
+  }
+
+  imprimir = () => window.print();
+
+  nuevoCodigo(s: FichaSocio) {
+    if (!confirm(`¿Generar un QR nuevo para ${s.nombre_completo}? El anterior dejará de funcionar.`)) return;
+    this.gym.nuevoCodigo(s.id).subscribe({
+      next: () => { this.mensaje.set({ ok: true, texto: 'QR nuevo generado; el anterior ya no funciona' }); this.cargar(); },
+      error: this.fallo
+    });
   }
 
   cargar() { this.gym.ficha(Number(this.id)).subscribe({ next: f => this.s.set(f), error: e => this.errorCarga.set(e.error?.error ?? 'Error de conexión') }); }
@@ -220,8 +245,12 @@ export class SocioComponent {
   }
 
   pagar() {
-    const { plan_id, inscripcion, descuento, pagado, metodo } = this.pago, acompanantes = this.pago.acompanantes.slice(0, this.huecos().length);
+    const { plan_id, inscripcion, descuento, pagado, metodo } = this.pago;
     if (plan_id === null || pagado === null) return;
+    // «#12 Luz Pérez» → 12; tiene que ser alguien de la lista, no un nombre escrito a mano.
+    const acompanantes = this.pago.acompanantes.slice(0, this.huecos().length).map(t => Number(/^#(\d+) /.exec(t ?? '')?.[1]));
+    if (acompanantes.some(id => !this.socios().some(o => o.id === id)))
+      return this.mensaje.set({ ok: false, texto: 'Elige a cada acompañante de la lista de sugerencias' });
     this.gym.pagar({ socio_id: Number(this.id), plan_id, inscripcion, descuento: Number(descuento) || 0, pagado: Number(pagado), metodo, acompanantes }).subscribe({
       next: s => {
         const saldo = s.saldo < 0 ? `, saldo pendiente ${(-s.saldo).toFixed(2)}` : s.saldo > 0 ? `, saldo a favor ${s.saldo.toFixed(2)}` : '';

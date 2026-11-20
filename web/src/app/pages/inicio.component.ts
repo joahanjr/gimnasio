@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { GymService, METODOS, Metodo, Plan, Producto, Socio, duracionTexto, metodoTexto, aviso, enfocar } from '../gym.service';
+import { GymService, METODOS, Metodo, Plan, Producto, Socio, duracionTexto, metodoTexto, aviso, enfocar, CODIGO_QR, avisoEntrada } from '../gym.service';
 
 type Accion = 'socio' | 'venta' | 'inventario' | 'visita';
 
@@ -13,7 +13,7 @@ type Accion = 'socio' | 'venta' | 'inventario' | 'visita';
   template: `
     <h2>Buscar cliente</h2>
     <form ngNativeValidate role="search" (ngSubmit)="buscar()">
-      <label>Nombre, apellido o número de socio
+      <label>Nombre, apellido, número de socio o código QR
         <input name="q" [(ngModel)]="q" autofocus autocomplete="off">
       </label>
       <button>Buscar</button>
@@ -138,7 +138,14 @@ export class InicioComponent {
   }
 
   buscar() {
-    if (this.q.trim()) this.gym.socios(this.q).subscribe(r => {
+    const q = this.q.trim();
+    // El lector USB «teclea» el código del QR y da Enter: se registra la entrada directamente.
+    if (CODIGO_QR.test(q)) {
+      this.q = '';
+      this.gym.entradaQR(q).subscribe({ next: s => { this.resultados.set([s]); this.mensaje.set(avisoEntrada(s)); }, error: e => { this.resultados.set([]); this.fallo(e); } });
+      return;
+    }
+    if (q) this.gym.socios(this.q).subscribe(r => {
       // Un solo resultado: directo a su ficha. Varios (mismo nombre): se elige por la foto.
       if (r.length === 1) this.router.navigate(['/socio', r[0].id]);
       this.resultados.set(r);

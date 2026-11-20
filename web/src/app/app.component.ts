@@ -11,6 +11,7 @@ import { GymService } from './gym.service';
     <nav aria-label="Principal">
       <a routerLink="/"><strong>Gimnasio</strong></a>
       @if (!u.cambiar_clave) {
+        <a routerLink="/entrada" routerLinkActive="activo" ariaCurrentWhenActive="page">Entrada QR</a>
         <a routerLink="/avisos" routerLinkActive="activo" ariaCurrentWhenActive="page">Avisos</a>
         <a routerLink="/caja" routerLinkActive="activo" ariaCurrentWhenActive="page">Caja</a>
       }
