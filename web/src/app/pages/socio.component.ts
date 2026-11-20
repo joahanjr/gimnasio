@@ -2,7 +2,7 @@ import { Component, Input, inject, signal } from '@angular/core';
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { FichaSocio, GymService, METODOS, Metodo, Pago, Plan, duracionTexto, enlaceWhatsApp, metodoTexto, aviso, enfocar } from '../gym.service';
+import { FichaSocio, GymService, METODOS, Metodo, Pago, Plan, Socio, duracionTexto, enlaceWhatsApp, metodoTexto, aviso, enfocar } from '../gym.service';
 
 // Las fechas de SQLite vienen como "YYYY-MM-DD HH:MM:SS"; DatePipe necesita la "T".
 const iso = (f: string) => f.replace(' ', 'T');
@@ -72,7 +72,7 @@ const iso = (f: string) => f.replace(' ', 'T');
           <label>Primer apellido <input name="apellido1" [(ngModel)]="datos.apellido1" required autocomplete="off"></label>
           <label>Segundo apellido <input name="apellido2" [(ngModel)]="datos.apellido2" autocomplete="off"></label>
           <label>Celular (10 dígitos)
-            <input name="telefono" [(ngModel)]="datos.telefono" type="tel" inputmode="numeric" required pattern="[\\d\\s-]*" autocomplete="off">
+            <input name="telefono" [(ngModel)]="datos.telefono" type="tel" inputmode="numeric" required pattern="[\\d\\s\\-]*" autocomplete="off">
           </label>
           <button>Guardar cambios</button>
           <button type="button" (click)="editando.set(false)">Cancelar</button>
@@ -87,6 +87,14 @@ const iso = (f: string) => f.replace(' ', 'T');
               @for (p of planes(); track p.id) { <option [ngValue]="p.id">{{ p.nombre }} — {{ duracionTexto(p) }}</option> }
             </select>
           </label>
+          @for (n of huecos(); track n) {
+            <label>Acompañante {{ n + 1 }}
+              <select [name]="'acompanante' + n" [(ngModel)]="pago.acompanantes[n]" required>
+                @for (o of otros(s); track o.id) { <option [ngValue]="o.id">#{{ o.id }} {{ o.nombre_completo }}</option> }
+              </select>
+            </label>
+          }
+          @if (huecos().length) { <p>El cobro queda en {{ s.nombre_completo }}; a sus acompañantes se les activa la membresía igual.</p> }
           <label class="casilla"><input name="inscripcion" type="checkbox" [(ngModel)]="pago.inscripcion"> Cobrar inscripción ({{ inscripcion() | currency }})</label>
           <label>Descuento <input name="descuento" type="number" min="0" [max]="precio() + cuotaInscripcion()" step="0.01" [(ngModel)]="pago.descuento"></label>
 
@@ -120,8 +128,16 @@ const iso = (f: string) => f.replace(' ', 'T');
         <tr><th>Fecha</th><th>Plan</th><th>Cobro</th><th>Pagó</th><th>Forma de pago</th>@if (esAdmin()) { <th>Acciones</th> }</tr>
         @for (p of s.pagos; track p.id) {
           <tr [class.anulado]="p.anulado">
-            <td>{{ iso(p.fecha) | date:'dd/MM/yyyy' }}</td><td>{{ p.plan }}</td><td>{{ p.cargo | currency }}</td>
-            <td>@if (p.anulado) { <s>{{ p.monto | currency }}</s> Anulado } @else { {{ p.monto | currency }} }</td>
+            <td>{{ iso(p.fecha) | date:'dd/MM/yyyy' }}</td>
+            <td>{{ p.plan }}
+              @if (p.acompanantes) { <br><small>Con {{ p.acompanantes }}</small> }
+              @if (p.pagado_por) { <br><small>Lo pagó {{ p.pagado_por }}</small> }
+            </td>
+            @if (p.pagado_por) { <td>—</td><td>@if (p.anulado) { Anulado } @else { — }</td> }
+            @else {
+              <td>{{ p.cargo | currency }}</td>
+              <td>@if (p.anulado) { <s>{{ p.monto | currency }}</s> Anulado } @else { {{ p.monto | currency }} }</td>
+            }
             <td>{{ metodoTexto(p.metodo) }}</td>
             @if (esAdmin()) { <td>@if (p === ultimoVigente(s) && p.anulable) { <button type="button" class="peligro" (click)="anular(p)">Anular</button> }</td> }
           </tr>
@@ -149,7 +165,8 @@ export class SocioComponent {
   cobrando = signal(false);
   mensaje = aviso();
   errorCarga = signal(''); // este no se borra: sin ficha no hay nada más que mostrar
-  pago = { plan_id: null as number | null, inscripcion: false, descuento: 0, pagado: null as number | null, metodo: 'efectivo' as Metodo };
+  pago = { plan_id: null as number | null, inscripcion: false, descuento: 0, pagado: null as number | null, metodo: 'efectivo' as Metodo, acompanantes: [] as number[] };
+  socios = signal<Socio[]>([]); // para elegir acompañantes en un plan de grupo
   editando = signal(false);
   datos = { nombre: '', apellido1: '', apellido2: '' as string | null, telefono: '' };
   metodos = METODOS;
@@ -184,6 +201,9 @@ export class SocioComponent {
 
   // El total que ve recepción; la API recalcula el cargo con los precios guardados.
   precio = () => this.planes().find(p => p.id === this.pago.plan_id)?.precio ?? 0;
+  // Un hueco por acompañante: plan de 3 personas → 2 selectores.
+  huecos = () => [...Array(Math.max(0, (this.planes().find(p => p.id === this.pago.plan_id)?.personas ?? 1) - 1)).keys()];
+  otros = (s: FichaSocio) => this.socios().filter(o => o.id !== s.id && o.activo);
   cuotaInscripcion = () => this.pago.inscripcion ? this.inscripcion() : 0;
   descuento = () => Number(this.pago.descuento) || 0;
   cargo = () => this.precio() + this.cuotaInscripcion() - this.descuento();
@@ -193,15 +213,16 @@ export class SocioComponent {
   abrirCobro(s: FichaSocio) {
     if (this.cobrando()) return this.cobrando.set(false);
     const suPlan = this.planes().some(p => p.id === s.plan_id) ? s.plan_id : null;
-    this.pago = { plan_id: suPlan, inscripcion: !s.ultimo_pago, descuento: 0, pagado: null, metodo: 'efectivo' }; // inscripción solo en su primer pago
+    this.pago = { plan_id: suPlan, inscripcion: !s.ultimo_pago, descuento: 0, pagado: null, metodo: 'efectivo', acompanantes: [] }; // inscripción solo en su primer pago
+    this.gym.socios().subscribe(l => this.socios.set(l));
     this.cobrando.set(true);
     enfocar('form.cobro');
   }
 
   pagar() {
-    const { plan_id, inscripcion, descuento, pagado, metodo } = this.pago;
+    const { plan_id, inscripcion, descuento, pagado, metodo } = this.pago, acompanantes = this.pago.acompanantes.slice(0, this.huecos().length);
     if (plan_id === null || pagado === null) return;
-    this.gym.pagar({ socio_id: Number(this.id), plan_id, inscripcion, descuento: Number(descuento) || 0, pagado: Number(pagado), metodo }).subscribe({
+    this.gym.pagar({ socio_id: Number(this.id), plan_id, inscripcion, descuento: Number(descuento) || 0, pagado: Number(pagado), metodo, acompanantes }).subscribe({
       next: s => {
         const saldo = s.saldo < 0 ? `, saldo pendiente ${(-s.saldo).toFixed(2)}` : s.saldo > 0 ? `, saldo a favor ${s.saldo.toFixed(2)}` : '';
         this.mensaje.set({ ok: s.saldo >= 0, texto: `Pago registrado, vigente hasta ${s.vence}${saldo}` });

@@ -14,6 +14,7 @@ Pensado para usarse en la computadora de la recepción por dos tipos de usuario:
 
 **Cobros**
 - Planes por meses o por días, con precio de inscripción configurable.
+- Planes de pareja o grupo (2 a 4 personas): uno paga y a los acompañantes se les activa la membresía; en su ficha queda quién pagó.
 - Cobro de membresía con descuento y pago parcial; el vencimiento se acumula si sigue vigente.
 - Pases de un día para quien no es socio.
 - Tienda: inventario y ventas, sin permitir existencias negativas.

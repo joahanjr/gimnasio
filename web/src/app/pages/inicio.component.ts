@@ -43,7 +43,7 @@ type Accion = 'socio' | 'venta' | 'inventario' | 'visita';
           <label>Primer apellido <input name="apellido1" [(ngModel)]="socio.apellido1" required autocomplete="off"></label>
           <label>Segundo apellido <input name="apellido2" [(ngModel)]="socio.apellido2" autocomplete="off"></label>
           <label>Celular (10 dígitos)
-            <input name="telefono" [(ngModel)]="socio.telefono" type="tel" inputmode="numeric" required pattern="[\\d\\s-]*" autocomplete="off">
+            <input name="telefono" [(ngModel)]="socio.telefono" type="tel" inputmode="numeric" required pattern="[\\d\\s\\-]*" autocomplete="off">
           </label>
           <label>Plan
             <select name="plan" [(ngModel)]="socio.plan_id" required>

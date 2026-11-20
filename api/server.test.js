@@ -168,6 +168,61 @@ test('flujo socio → pago → entrada', async () => {
   }
 });
 
+test('plan de pareja o grupo: uno paga y a los demás se les activa', async () => {
+  const srv = app.listen(0);
+  const url = `http://localhost:${srv.address().port}/api`;
+  let cookie = '';
+  const req = (metodo, p, body) => fetch(url + p, { method: metodo, headers: { 'Content-Type': 'application/json', cookie }, body: body && JSON.stringify(body) });
+  const post = (p, b) => req('POST', p, b), get = p => req('GET', p), json = r => r.then(x => x.json());
+  try {
+    cookie = (await post('/login', { usuario: 'admin', clave: 'nueva123' })).headers.get('set-cookie').split(';')[0];
+    assert.equal((await post('/planes', { nombre: 'Grupo 5', duracion: 1, unidad: 'meses', precio: 1, personas: 5 })).status, 400);
+    const pareja = await json(post('/planes', { nombre: 'Pareja', duracion: 1, unidad: 'meses', precio: 800, personas: 2 }));
+    const trio = await json(post('/planes', { nombre: 'Trío', duracion: 1, unidad: 'meses', precio: 1100, personas: 3 }));
+    const solo = (await json(get('/planes'))).find(p => p.nombre === 'Mensual');
+    assert.equal(solo.personas, 1); // los planes de antes quedan individuales
+    const alta = n => json(post('/socios', { nombre: n, apellido1: 'Grupo', telefono: '5511112222', plan_id: pareja.id }));
+    const [luz, sol, mar] = [await alta('Luz'), await alta('Sol'), await alta('Mar')];
+    const pagar = b => post('/pagos', { socio_id: luz.id, plan_id: pareja.id, pagado: 800, ...b });
+
+    // Validaciones: número exacto de acompañantes, distintos, que existan y no sea quien paga.
+    assert.equal((await pagar({})).status, 400);
+    assert.equal((await pagar({ acompanantes: [luz.id] })).status, 400);
+    assert.equal((await pagar({ acompanantes: [sol.id, mar.id] })).status, 400);
+    assert.equal((await pagar({ acompanantes: ['x'] })).status, 400);
+    assert.equal((await pagar({ acompanantes: [9999] })).status, 404);
+    assert.equal((await pagar({ plan_id: solo.id, pagado: 500, acompanantes: [sol.id] })).status, 400);
+    assert.equal((await post('/pagos', { socio_id: luz.id, plan_id: trio.id, pagado: 1100, acompanantes: [sol.id, sol.id] })).status, 400);
+
+    // Paga Luz: a Sol se le activa igual, sin cobro ni saldo.
+    const pagoLuz = await json(pagar({ acompanantes: [sol.id] }));
+    const fichaSol = await json(get(`/socios/${sol.id}`));
+    assert.equal(fichaSol.vence, pagoLuz.vence);
+    assert.equal(fichaSol.vigente, true);
+    assert.equal(fichaSol.saldo, 0);
+    assert.equal(fichaSol.plan, 'Pareja');
+    assert.match(fichaSol.pagos[0].pagado_por, /Luz Grupo/);
+    const fichaLuz = await json(get(`/socios/${luz.id}`));
+    assert.equal(fichaLuz.saldo, 0);
+    assert.match(fichaLuz.pagos[0].acompanantes, /Sol Grupo/);
+    assert.match((await json(get('/corte'))).movimientos.find(m => m.id === fichaLuz.pagos[0].id && m.tipo === 'pago').concepto, /con Sol Grupo/);
+
+    // Si Sol paga después por su cuenta, el pago de pareja no se puede anular hasta anular el de Sol.
+    const pagoSol = await json(post('/pagos', { socio_id: sol.id, plan_id: solo.id, pagado: 500 }));
+    assert.ok(pagoSol.vence > fichaSol.vence);
+    const idPareja = fichaLuz.pagos[0].id;
+    assert.equal((await post(`/pagos/${idPareja}/anular`)).status, 400);
+    assert.equal((await post(`/pagos/${(await json(get(`/socios/${sol.id}`))).pagos[0].id}/anular`)).status, 200);
+    // Ya sin el pago de Sol, se anula el de pareja y los dos regresan a como estaban.
+    assert.equal((await post(`/pagos/${idPareja}/anular`)).status, 200);
+    assert.equal((await json(get(`/socios/${luz.id}`))).vence, null);
+    assert.equal((await json(get(`/socios/${sol.id}`))).vence, null);
+    assert.equal((await json(get(`/socios/${sol.id}`))).pagos[1].anulado, true);
+  } finally {
+    srv.close();
+  }
+});
+
 test('las migraciones se pueden correr varias veces sobre la misma base', () => {
   const { execFileSync } = require('node:child_process');
   const os = require('node:os'), path = require('node:path'), fs = require('node:fs');

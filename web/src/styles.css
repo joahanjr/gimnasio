@@ -34,6 +34,7 @@ nav strong { font-family: var(--titulos); font-size: 1.6rem; font-weight: 700; t
 nav .usuario button { color: var(--marca); border-color: var(--marca); }
 
 main { max-width: 900px; margin: auto; padding: 1rem; }
+a { color: var(--primario); text-underline-offset: .2em; }
 
 /* Formularios */
 form { display: flex; gap: .75rem; flex-wrap: wrap; align-items: end; margin-bottom: 1rem; }

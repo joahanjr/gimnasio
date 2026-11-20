@@ -102,7 +102,13 @@ import { GymService, Plan, PlanNuevo, Producto, Rol, Usuario, duracionTexto, avi
         <label>Unidad
           <select name="unidad" [(ngModel)]="plan.unidad"><option value="meses">Meses</option><option value="dias">Días</option></select>
         </label>
+        <label>Personas
+          <select name="personas" [(ngModel)]="plan.personas">
+            <option [ngValue]="1">Individual</option><option [ngValue]="2">2 (pareja)</option><option [ngValue]="3">3</option><option [ngValue]="4">4</option>
+          </select>
+        </label>
         <label>Precio <input name="precio" type="number" min="0.01" step="0.01" [(ngModel)]="plan.precio" required></label>
+        <p>En un plan de grupo, el precio es por todos: lo paga una persona y a las demás se les activa la membresía.</p>
         <button>{{ editando() ? 'Guardar cambios' : 'Agregar plan' }}</button>
         @if (editando()) { <button type="button" (click)="limpiarPlan()">Cancelar</button> }
       </form>
@@ -146,7 +152,7 @@ export class UsuariosComponent {
   error = signal('');
 
   planes = signal<Plan[]>([]);
-  plan: PlanNuevo = { nombre: '', duracion: 1, unidad: 'meses', precio: 0 };
+  plan: PlanNuevo = { nombre: '', duracion: 1, unidad: 'meses', precio: 0, personas: 1 };
   editando = signal<Plan | null>(null);
   errorPlan = signal('');
   inscripcion = 0;
@@ -213,11 +219,11 @@ export class UsuariosComponent {
   }
   cargarPlanes() { this.gym.planes().subscribe(p => this.planes.set(p)); }
 
-  limpiarPlan() { this.plan = { nombre: '', duracion: 1, unidad: 'meses', precio: 0 }; this.editando.set(null); }
+  limpiarPlan() { this.plan = { nombre: '', duracion: 1, unidad: 'meses', precio: 0, personas: 1 }; this.editando.set(null); }
 
   editar(p: Plan) {
     this.editando.set(p);
-    this.plan = { nombre: p.nombre, duracion: p.duracion, unidad: p.unidad, precio: p.precio, activo: !!p.activo };
+    this.plan = { nombre: p.nombre, duracion: p.duracion, unidad: p.unidad, precio: p.precio, personas: p.personas, activo: !!p.activo };
   }
 
   guardarPlan() {
@@ -230,7 +236,7 @@ export class UsuariosComponent {
   }
 
   alternar(p: Plan) {
-    this.gym.editarPlan(p.id, { nombre: p.nombre, duracion: p.duracion, unidad: p.unidad, precio: p.precio, activo: !p.activo }).subscribe({
+    this.gym.editarPlan(p.id, { nombre: p.nombre, duracion: p.duracion, unidad: p.unidad, precio: p.precio, personas: p.personas, activo: !p.activo }).subscribe({
       next: () => this.cargarPlanes(),
       error: err => this.errorPlan.set(err.error?.error ?? 'Error de conexión')
     });

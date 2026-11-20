@@ -100,6 +100,18 @@ for (const t of ['pagos', 'ventas', 'visitas']) {
 }
 // Vencimiento antes del pago, para poder anularlo. '' = no tenía; NULL = pago anterior a esta columna (no se puede anular).
 agregarColumna('pagos', 'vence_antes', 'TEXT');
+// Planes de pareja o grupo: uno paga y a los demás se les activa la membresía igual.
+agregarColumna('planes', 'personas', 'INTEGER NOT NULL DEFAULT 1');
+db.exec(`CREATE TABLE IF NOT EXISTS pago_acompanantes (
+  pago_id INTEGER NOT NULL REFERENCES pagos(id),
+  socio_id INTEGER NOT NULL REFERENCES socios(id),
+  vence_antes TEXT NOT NULL,           -- para regresar su vencimiento si se anula el pago ('' = no tenía)
+  PRIMARY KEY (pago_id, socio_id)
+)`);
+// Último pago vigente que movió el vencimiento del socio, sea suyo o como acompañante.
+const ultimoPagoDe = id => db.prepare(`SELECT max(id) FROM (
+  SELECT id FROM pagos WHERE socio_id = $id AND anulado IS NULL
+  UNION ALL SELECT a.pago_id FROM pago_acompanantes a JOIN pagos p ON p.id = a.pago_id WHERE a.socio_id = $id AND p.anulado IS NULL)`).pluck().get({ id });
 
 function hashClave(clave, salt = crypto.randomBytes(16).toString('hex')) {
   return `${salt}:${crypto.scryptSync(clave, salt, 64).toString('hex')}`;
@@ -245,7 +257,8 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/planes', (req, res) => res.json(db.prepare('SELECT * FROM planes ORDER BY activo DESC, precio').all()));
 
-function validarPlan({ nombre, duracion, unidad, precio }) {
+function validarPlan({ nombre, duracion, unidad, precio, personas = 1 }) {
+  if (![1, 2, 3, 4].includes(personas)) return 'El plan es para 1 a 4 personas';
   if (!texto(nombre)) return 'El nombre del plan es obligatorio';
   if (!Number.isInteger(duracion) || duracion < 1) return 'Duración inválida';
   if (!['meses', 'dias'].includes(unidad)) return 'Unidad inválida';
@@ -256,18 +269,18 @@ const nombreRepetido = (nombre, id = -1) => db.prepare('SELECT 1 FROM planes WHE
 app.post('/api/planes', soloAdmin, (req, res) => {
   const error = validarPlan(req.body);
   if (error) return res.status(400).json({ error });
-  const { nombre, duracion, unidad, precio } = req.body;
+  const { nombre, duracion, unidad, precio, personas = 1 } = req.body;
   if (nombreRepetido(nombre)) return res.status(409).json({ error: 'Ya existe un plan con ese nombre' });
-  res.status(201).json(db.prepare('INSERT INTO planes (nombre, duracion, unidad, precio) VALUES (?, ?, ?, ?) RETURNING *').get(nombre.trim(), duracion, unidad, precio));
+  res.status(201).json(db.prepare('INSERT INTO planes (nombre, duracion, unidad, precio, personas) VALUES (?, ?, ?, ?, ?) RETURNING *').get(nombre.trim(), duracion, unidad, precio, personas));
 });
 
 app.put('/api/planes/:id', soloAdmin, (req, res) => {
   const error = validarPlan(req.body);
   if (error) return res.status(400).json({ error });
-  const { nombre, duracion, unidad, precio, activo } = req.body;
+  const { nombre, duracion, unidad, precio, activo, personas } = req.body;
   if (nombreRepetido(nombre, Number(req.params.id))) return res.status(409).json({ error: 'Ya existe un plan con ese nombre' });
-  const plan = db.prepare('UPDATE planes SET nombre = ?, duracion = ?, unidad = ?, precio = ?, activo = ? WHERE id = ? RETURNING *')
-    .get(nombre.trim(), duracion, unidad, precio, activo === false ? 0 : 1, req.params.id);
+  const plan = db.prepare('UPDATE planes SET nombre = ?, duracion = ?, unidad = ?, precio = ?, activo = ?, personas = coalesce(?, personas) WHERE id = ? RETURNING *')
+    .get(nombre.trim(), duracion, unidad, precio, activo === false ? 0 : 1, personas ?? null, req.params.id); // sin `personas` se conserva
   if (!plan) return res.status(404).json({ error: 'Plan no encontrado' });
   res.json(plan);
 });
@@ -317,8 +330,14 @@ app.get('/api/socios/:id', (req, res) => {
     ...socio,
     entradas: db.prepare('SELECT fecha FROM entradas WHERE socio_id = ? ORDER BY id DESC').pluck().all(socio.id),
     ultimo_pago: db.prepare('SELECT fecha, plan, monto FROM pagos WHERE socio_id = ? AND anulado IS NULL ORDER BY id DESC LIMIT 1').get(socio.id) ?? null,
-    pagos: db.prepare(`SELECT id, fecha, plan, monto, coalesce(cargo, monto) AS cargo, metodo, anulado IS NOT NULL AS anulado,
-      vence_antes IS NOT NULL AS anulable FROM pagos WHERE socio_id = ? ORDER BY id DESC`).all(socio.id)
+    // pagado_por: en un plan de grupo, quién pagó (el acompañante no tiene cobro); acompanantes: a quiénes cubrió el pago.
+    pagos: db.prepare(`SELECT p.id, p.fecha, p.plan, p.monto, coalesce(p.cargo, p.monto) AS cargo, p.metodo, p.anulado IS NOT NULL AS anulado,
+        p.vence_antes IS NOT NULL AS anulable, NULL AS pagado_por,
+        (SELECT group_concat('#' || s.id || ' ' || s.nombre_completo, ', ') FROM pago_acompanantes a JOIN socios s ON s.id = a.socio_id WHERE a.pago_id = p.id) AS acompanantes
+      FROM pagos p WHERE p.socio_id = $id
+      UNION ALL SELECT p.id, p.fecha, p.plan, 0, 0, p.metodo, p.anulado IS NOT NULL, 0, '#' || s.id || ' ' || s.nombre_completo, NULL
+      FROM pago_acompanantes a JOIN pagos p ON p.id = a.pago_id JOIN socios s ON s.id = p.socio_id WHERE a.socio_id = $id
+      ORDER BY 1 DESC`).all({ id: socio.id })
       .map(p => ({ ...p, anulado: !!p.anulado, anulable: !!p.anulable }))
   });
 });
@@ -430,7 +449,7 @@ app.put('/api/productos/:id', soloAdmin, (req, res) => {
 });
 
 app.post('/api/pagos', (req, res) => {
-  const { socio_id, plan_id, inscripcion, descuento = 0, pagado, metodo } = req.body;
+  const { socio_id, plan_id, inscripcion, descuento = 0, pagado, metodo, acompanantes = [] } = req.body;
   if (!metodoValido(metodo)) return res.status(400).json({ error: 'Forma de pago inválida' });
   // Los precios salen de la base, nunca del navegador.
   const plan = db.prepare('SELECT * FROM planes WHERE id = ? AND activo = 1').get(plan_id);
@@ -441,15 +460,27 @@ app.post('/api/pagos', (req, res) => {
   const socio = db.prepare('SELECT * FROM socios WHERE id = ?').get(socio_id);
   if (!socio) return res.status(404).json({ error: 'Socio no encontrado' });
   if (!socio.activo) return res.status(400).json({ error: BAJA });
+  // Plan de grupo: hacen falta exactamente (personas - 1) acompañantes distintos, activos y que no sean quien paga.
+  const faltan = plan.personas - 1;
+  if (!Array.isArray(acompanantes) || !acompanantes.every(Number.isInteger) || acompanantes.length !== faltan || new Set([socio.id, ...acompanantes]).size !== plan.personas)
+    return res.status(400).json({ error: faltan ? `Elige ${faltan} ${faltan === 1 ? 'acompañante distinto' : 'acompañantes distintos'}` : 'Este plan es individual' });
+  const otros = acompanantes.map(id => db.prepare('SELECT * FROM socios WHERE id = ?').get(id));
+  if (otros.includes(undefined)) return res.status(404).json({ error: 'Acompañante no encontrado' });
+  const inactivo = otros.find(o => !o.activo);
+  if (inactivo) return res.status(400).json({ error: `${inactivo.nombre_completo}: ${BAJA}` });
   const cargo = centavos(plan.precio + cuotaInscripcion - descuento);
   const vence = extenderVigencia(socio.vence, plan.duracion, plan.unidad);
   db.transaction(() => {
-    db.prepare(`INSERT INTO pagos (socio_id, plan, meses, monto, usuario_id, plan_id, precio, inscripcion, descuento, cargo, metodo, vence_antes)
+    const { lastInsertRowid: pagoId } = db.prepare(`INSERT INTO pagos (socio_id, plan, meses, monto, usuario_id, plan_id, precio, inscripcion, descuento, cargo, metodo, vence_antes)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(socio.id, plan.nombre, plan.unidad === 'meses' ? plan.duracion : 0, centavos(pagado), req.usuario.id, plan.id, plan.precio, cuotaInscripcion, descuento, cargo,
         metodo ?? 'efectivo', socio.vence ?? '');
     // Su plan pasa a ser el último que pagó; el aviso de vencimiento ya no aplica.
     db.prepare('UPDATE socios SET vence = ?, plan_id = ?, avisado = NULL WHERE id = ?').run(vence, plan.id, socio.id);
+    for (const o of otros) {
+      db.prepare('INSERT INTO pago_acompanantes (pago_id, socio_id, vence_antes) VALUES (?, ?, ?)').run(pagoId, o.id, o.vence ?? '');
+      db.prepare('UPDATE socios SET vence = ?, plan_id = ?, avisado = NULL WHERE id = ?').run(extenderVigencia(o.vence, plan.duracion, plan.unidad), plan.id, o.id);
+    }
   })();
   res.status(201).json(fichaDe(socio.id));
 });
@@ -459,11 +490,15 @@ app.post('/api/pagos/:id/anular', soloAdmin, (req, res) => {
   const p = db.prepare('SELECT * FROM pagos WHERE id = ? AND anulado IS NULL').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'Pago no encontrado o ya anulado' });
   if (p.vence_antes === null) return res.status(400).json({ error: 'Este pago es anterior a las anulaciones y no se puede anular' });
-  const ultimo = db.prepare('SELECT max(id) FROM pagos WHERE socio_id = ? AND anulado IS NULL').pluck().get(p.socio_id);
-  if (ultimo !== p.id) return res.status(400).json({ error: 'Solo se puede anular el último pago del socio' });
+  if (ultimoPagoDe(p.socio_id) !== p.id) return res.status(400).json({ error: 'Solo se puede anular el último pago del socio' });
+  // En un plan de grupo, cada acompañante también debe seguir con el vencimiento que le dio este pago.
+  const acomp = db.prepare('SELECT a.*, s.nombre_completo FROM pago_acompanantes a JOIN socios s ON s.id = a.socio_id WHERE a.pago_id = ?').all(p.id);
+  const movido = acomp.find(a => ultimoPagoDe(a.socio_id) !== p.id);
+  if (movido) return res.status(400).json({ error: `${movido.nombre_completo} ya tiene un pago posterior; anúlalo primero` });
   db.transaction(() => {
     db.prepare('UPDATE pagos SET anulado = ? WHERE id = ?').run(req.usuario.id, p.id);
     db.prepare('UPDATE socios SET vence = ? WHERE id = ?').run(p.vence_antes || null, p.socio_id);
+    for (const a of acomp) db.prepare('UPDATE socios SET vence = ? WHERE id = ?').run(a.vence_antes || null, a.socio_id);
   })();
   res.json(fichaDe(p.socio_id));
 });
@@ -510,7 +545,8 @@ app.get('/api/ventas', (req, res) => {
 app.get('/api/corte', (req, res) => {
   const movimientos = db.prepare(`
     WITH mov AS (
-      SELECT 'pago' AS tipo, p.id, p.fecha, s.nombre_completo || ' · ' || p.plan AS concepto, p.monto, p.metodo, p.usuario_id, p.anulado
+      SELECT 'pago' AS tipo, p.id, p.fecha, s.nombre_completo || ' · ' || p.plan
+          || coalesce(' (con ' || (SELECT group_concat(o.nombre_completo, ', ') FROM pago_acompanantes a JOIN socios o ON o.id = a.socio_id WHERE a.pago_id = p.id) || ')', '') AS concepto, p.monto, p.metodo, p.usuario_id, p.anulado
         FROM pagos p JOIN socios s ON s.id = p.socio_id WHERE date(p.fecha) = $f
       UNION ALL SELECT 'visita', id, fecha, 'Visita: ' || nombre, monto, metodo, usuario_id, anulado FROM visitas WHERE date(fecha) = $f
       UNION ALL SELECT 'venta', id, fecha, cantidad || ' × ' || concepto, monto, metodo, usuario_id, anulado FROM ventas WHERE date(fecha) = $f

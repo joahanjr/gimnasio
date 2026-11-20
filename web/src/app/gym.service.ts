@@ -8,7 +8,7 @@ export interface Socio { id: number; nombre: string; apellido1: string | null; a
   activo: number; avisado: string | null; }
 export type Metodo = 'efectivo' | 'tarjeta' | 'transferencia';
 export const METODOS: Metodo[] = ['efectivo', 'tarjeta', 'transferencia'];
-export interface Pago { id: number; fecha: string; plan: string; monto: number; cargo: number; metodo: Metodo; anulado: boolean; anulable: boolean; }
+export interface Pago { id: number; fecha: string; plan: string; monto: number; cargo: number; metodo: Metodo; anulado: boolean; anulable: boolean; pagado_por: string | null; acompanantes: string | null; }
 export interface FichaSocio extends Socio { entradas: string[]; ultimo_pago: { fecha: string; plan: string; monto: number } | null; pagos: Pago[]; }
 export type Rol = 'admin' | 'recepcion';
 export interface Usuario { id: number; usuario: string; nombre: string; rol: Rol; activo?: number; cambiar_clave?: boolean; }
@@ -16,7 +16,7 @@ export interface Movimiento { tipo: 'pago' | 'visita' | 'venta'; id: number; fec
 export interface Corte { movimientos: Movimiento[]; total: number; por_tipo: Record<string, number>; por_metodo: Record<string, number>; por_usuario: Record<string, number>; }
 export type DatosSocio = { nombre: string; apellido1: string; apellido2: string | null; telefono: string };
 export type Unidad = 'meses' | 'dias';
-export interface Plan { id: number; nombre: string; duracion: number; unidad: Unidad; precio: number; activo: number; }
+export interface Plan { id: number; nombre: string; duracion: number; unidad: Unidad; precio: number; activo: number; personas: number; }
 export type PlanNuevo = Omit<Plan, 'id' | 'activo'> & { activo?: boolean };
 export interface Producto { id: number; nombre: string; precio: number; existencia: number; activo: number; }
 
@@ -52,7 +52,7 @@ export class GymService {
     const foto = await reducirFoto(archivo);
     await firstValueFrom(this.http.put(`/api/socios/${id}/foto`, foto, { headers: { 'Content-Type': foto.type } }));
   }
-  pagar(p: { socio_id: number; plan_id: number; inscripcion: boolean; descuento: number; pagado: number; metodo: Metodo }) { return this.http.post<Socio>('/api/pagos', p); }
+  pagar(p: { socio_id: number; plan_id: number; inscripcion: boolean; descuento: number; pagado: number; metodo: Metodo; acompanantes: number[] }) { return this.http.post<Socio>('/api/pagos', p); }
   vender(v: { producto_id: number; cantidad: number; metodo: Metodo }) { return this.http.post('/api/ventas', v); }
   productos() { return this.http.get<Producto[]>('/api/productos'); }
   agregarInventario(i: { nombre: string; cantidad: number; precio: number }) { return this.http.post<Producto>('/api/inventario', i); }
@@ -75,7 +75,8 @@ export async function reducirFoto(archivo: File, lado = 480): Promise<Blob> {
   return new Promise((ok, mal) => canvas.toBlob(b => b ? ok(b) : mal(new Error('No se pudo leer la foto')), 'image/jpeg', 0.85));
 }
 
-export const duracionTexto = (p: Plan) => `${p.duracion} ${p.unidad === 'dias' ? (p.duracion === 1 ? 'día' : 'días') : (p.duracion === 1 ? 'mes' : 'meses')}`;
+export const duracionTexto = (p: Plan) => `${p.duracion} ${p.unidad === 'dias' ? (p.duracion === 1 ? 'día' : 'días') : (p.duracion === 1 ? 'mes' : 'meses')}`
+  + (p.personas > 1 ? ` · ${p.personas} personas` : '');
 
 export const metodoTexto = (m: string) => ({ efectivo: 'Efectivo', tarjeta: 'Tarjeta', transferencia: 'Transferencia' } as Record<string, string>)[m] ?? m;
 
